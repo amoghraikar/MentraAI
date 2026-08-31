@@ -7,13 +7,18 @@ import '../../core/theme/app_typography.dart';
 class MentraProgressBar extends StatelessWidget {
   const MentraProgressBar({
     super.key,
-    required this.percentage,
+    double? percentage,
+    double? value,
+    this.label,
+    this.valueLabel,
     this.height = 6.0,
     this.color,
     this.showLabel = true,
-  });
+  }) : percentage = percentage ?? value ?? 0.0;
 
   final double percentage; // 0.0 to 1.0
+  final String? label;
+  final String? valueLabel;
   final double height;
   final Color? color;
   final bool showLabel;
@@ -24,6 +29,9 @@ class MentraProgressBar extends StatelessWidget {
     final clampedPercent = percentage.clamp(0.0, 1.0);
     final progressColor = color ?? theme.colorScheme.primary;
 
+    final displayLabel = label ?? 'Progress';
+    final displayValue = valueLabel ?? '${(clampedPercent * 100).toInt()}%';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -33,13 +41,13 @@ class MentraProgressBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Progress',
+                displayLabel,
                 style: AppTypography.labelSmall.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
               Text(
-                '${(clampedPercent * 100).toInt()}%',
+                displayValue,
                 style: AppTypography.labelSmall.copyWith(
                   fontWeight: FontWeight.w600,
                   color: theme.colorScheme.onSurface,

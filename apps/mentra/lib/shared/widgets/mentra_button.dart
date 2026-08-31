@@ -100,11 +100,15 @@ class _MentraButtonState extends State<MentraButton> {
           Icon(widget.icon, size: 16, color: foregroundColor),
           const SizedBox(width: AppSpacing.sm),
         ],
-        Text(
-          widget.label,
-          style: AppTypography.labelMedium.copyWith(
-            color: foregroundColor,
-            fontWeight: FontWeight.w600,
+        Flexible(
+          child: Text(
+            widget.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelMedium.copyWith(
+              color: foregroundColor,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],

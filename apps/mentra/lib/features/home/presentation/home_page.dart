@@ -2,266 +2,289 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/mentra_badge.dart';
 import '../../../shared/widgets/mentra_button.dart';
 import '../../../shared/widgets/mentra_card.dart';
 import '../../../shared/widgets/mentra_progress_bar.dart';
 import '../../../shared/widgets/mentra_section.dart';
 import '../../../shared/widgets/mentra_stat_card.dart';
-import '../data/mock_home_data.dart';
+import '../../study_session/domain/models/study_session_record.dart';
+import '../../study_session/domain/repositories/session_repository.dart';
 
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+class HomePage extends StatefulWidget {
+  const HomePage({
+    super.key,
+    required this.sessionRepository,
+    required this.onStartStudySession,
+    required this.onOpenSubject,
+  });
+
+  final SessionRepository sessionRepository;
+  final VoidCallback onStartStudySession;
+  final void Function(String subjectId) onOpenSubject;
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  List<StudySessionRecord> _recentSessions = [];
+  Map<String, dynamic> _stats = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final sessions = await widget.sessionRepository.getRecentSessions(limit: 4);
+    final stats = await widget.sessionRepository.getSessionStatistics();
+    if (!mounted) return;
+    setState(() {
+      _recentSessions = sessions;
+      _stats = stats;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Top Hero Greeting & Quick Action
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  MockHomeData.greeting,
-                  style: AppTypography.displayMedium.copyWith(
-                    color: theme.colorScheme.onSurface,
+        // Welcome Header & Main CTA
+        MentraCard(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Good morning',
+                        style: AppTypography.displayMedium.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      const MentraBadge(label: 'Workspace Active', variant: MentraBadgeVariant.success),
+                    ],
                   ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  MockHomeData.focusPrompt,
-                  style: AppTypography.bodyLarge.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    'Ready to focus on your coursework today?',
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            MentraButton(
-              label: 'Start Study Session',
-              icon: Icons.play_arrow_rounded,
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Study Session workflow will be available in future milestones.'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-
-        const SizedBox(height: AppSpacing.xl),
-        Divider(color: theme.dividerColor, height: 1),
-        const SizedBox(height: AppSpacing.xl),
-
-        // Today's Progress Section
-        MentraSection(
-          title: "Today's Progress",
-          subtitle: "Summary of your study telemetry today",
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final isNarrow = constraints.maxWidth < 600;
-              final statCards = [
-                const MentraStatCard(
-                  label: 'Study Time',
-                  value: MockHomeData.todayStudyTime,
-                  icon: Icons.timer_outlined,
-                ),
-                const MentraStatCard(
-                  label: 'Focus Score',
-                  value: MockHomeData.todayFocusScore,
-                  icon: Icons.auto_graph_rounded,
-                  iconColor: AppColors.success,
-                ),
-                const MentraStatCard(
-                  label: 'Sessions',
-                  value: MockHomeData.todaySessionsCount,
-                  icon: Icons.donut_large_rounded,
-                ),
-              ];
-
-              if (isNarrow) {
-                return Column(
-                  children: statCards
-                      .map((c) => Padding(
-                            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                            child: c,
-                          ))
-                      .toList(),
-                );
-              }
-
-              return Row(
-                children: statCards
-                    .map((card) => Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-                            child: card,
-                          ),
-                        ))
-                    .toList(),
-              );
-            },
+                ],
+              ),
+              MentraButton(
+                label: 'Start Study Session',
+                icon: Icons.play_arrow_rounded,
+                onPressed: widget.onStartStudySession,
+              ),
+            ],
           ),
         ),
 
-        // Continue Studying Section
+        const SizedBox(height: AppSpacing.xl),
+
+        // Today's Overview Metrics
+        MentraSection(
+          title: "Today's Progress",
+          subtitle: 'Daily learning time, average focus score, and active sessions',
+          child: Row(
+            children: [
+              Expanded(
+                child: MentraStatCard(
+                  title: 'Study Time',
+                  value: _stats['totalStudyHours'] ?? '2h 15m',
+                  subtitle: '+45m vs yesterday',
+                  icon: Icons.timer_outlined,
+                  trendLabel: 'On Track',
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: MentraStatCard(
+                  title: 'Focus Score',
+                  value: _stats['averageFocus'] ?? '84%',
+                  subtitle: 'High attention baseline',
+                  icon: Icons.insights_outlined,
+                  trendLabel: 'High',
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: MentraStatCard(
+                  title: 'Sessions',
+                  value: '${_stats['totalSessions'] ?? 3}',
+                  subtitle: 'Completed study blocks',
+                  icon: Icons.check_circle_outline_rounded,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: AppSpacing.xl),
+
+        // Continue Studying Card
         MentraSection(
           title: 'Continue Studying',
-          subtitle: 'Pick up where you left off',
+          subtitle: 'Pick up right where you left off',
           child: MentraCard(
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Row(
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF0F0EE),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.school_outlined,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.base),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Row(
+                        children: [
+                          const MentraBadge(label: 'DATA ANALYTICS', variant: MentraBadgeVariant.primary),
+                          const SizedBox(width: AppSpacing.sm),
+                          Text('Unit II', style: AppTypography.labelSmall),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
                       Text(
-                        MockHomeData.continueSubject.subject,
-                        style: AppTypography.titleSmall.copyWith(
-                          color: theme.colorScheme.onSurface,
-                        ),
+                        'Correlation & Multiple Regression',
+                        style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        MockHomeData.continueSubject.topic,
+                        'Ordinary Least Squares (OLS) residual diagnostics and ANOVA F-tests',
                         style: AppTypography.bodySmall.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      MentraProgressBar(
-                        percentage: MockHomeData.continueSubject.progress,
-                        height: 4,
-                        showLabel: false,
+                      const SizedBox(height: AppSpacing.md),
+                      const MentraProgressBar(
+                        value: 0.78,
+                        label: 'Topic Progress',
+                        valueLabel: '78%',
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: AppSpacing.lg),
+                const SizedBox(width: AppSpacing.xl),
                 MentraButton(
                   label: 'Continue',
-                  variant: MentraButtonVariant.secondary,
-                  onPressed: () {},
+                  icon: Icons.play_arrow_rounded,
+                  onPressed: widget.onStartStudySession,
                 ),
               ],
             ),
           ),
         ),
 
-        // Recent Sessions Section
-        MentraSection(
-          title: 'Recent Sessions',
-          subtitle: 'Your recent study activity',
-          child: Column(
-            children: MockHomeData.recentSessions.map((session) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+        const SizedBox(height: AppSpacing.xl),
+
+        // Recent Sessions & AI Insight Grid
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Recent Sessions List
+            Expanded(
+              flex: 3,
+              child: MentraSection(
+                title: 'Recent Sessions',
+                subtitle: 'Completed study blocks & attention records',
                 child: MentraCard(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.base,
-                    vertical: AppSpacing.md,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.history_rounded,
-                        size: 20,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Text(
-                          session.subject,
-                          style: AppTypography.bodyMedium.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.onSurface,
-                          ),
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  child: _recentSessions.isEmpty
+                      ? const Text('No study sessions completed yet.')
+                      : Column(
+                          children: _recentSessions.map((session) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.timer_outlined, size: 18, color: AppColors.success),
+                                        const SizedBox(width: AppSpacing.sm),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                session.topicTitle,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: AppTypography.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+                                              ),
+                                              Text(
+                                                '${session.subjectTitle} • ${session.durationMinutes} min',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: AppTypography.bodySmall.copyWith(
+                                                  color: theme.colorScheme.onSurfaceVariant,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppSpacing.sm),
+                                  MentraBadge(
+                                    label: '${session.focusScore}% Focus',
+                                    variant: session.focusScore >= 85
+                                        ? MentraBadgeVariant.success
+                                        : MentraBadgeVariant.neutral,
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
                         ),
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.lg),
+            // Mentra Insight
+            Expanded(
+              flex: 2,
+              child: MentraSection(
+                title: 'Mentra Insight',
+                subtitle: 'Behavioral pattern recognition',
+                child: MentraCard(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.psychology_outlined, color: AppColors.accent, size: 20),
+                          const SizedBox(width: AppSpacing.xs),
+                          Text('Peak Attention Window', style: AppTypography.labelMedium),
+                        ],
                       ),
+                      const SizedBox(height: AppSpacing.sm),
                       Text(
-                        session.duration,
+                        'Your focus is usually strongest during the first 45 minutes of studying. Taking a 10-minute break after this window prevents the 35% cognitive drop observed in longer sessions.',
                         style: AppTypography.bodySmall.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.xl),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.sm,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.success.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          session.focusScore,
-                          style: AppTypography.labelSmall.copyWith(
-                            color: AppColors.success,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          height: 1.4,
                         ),
                       ),
                     ],
                   ),
                 ),
-              );
-            }).toList(),
-          ),
-        ),
-
-        // Mentra Insight Highlight
-        MentraSection(
-          title: 'Mentra Insight',
-          child: MentraCard(
-            backgroundColor: isDark
-                ? const Color(0xFF1E2638)
-                : const Color(0xFFF1F5F9),
-            borderColor: isDark
-                ? const Color(0xFF2E3D5B)
-                : const Color(0xFFCBD5E1),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.lightbulb_outline_rounded,
-                  color: theme.colorScheme.primary,
-                  size: 24,
-                ),
-                const SizedBox(width: AppSpacing.base),
-                Expanded(
-                  child: Text(
-                    MockHomeData.dailyInsight,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: theme.colorScheme.onSurface,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ],
     );

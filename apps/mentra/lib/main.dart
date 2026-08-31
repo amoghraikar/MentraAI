@@ -6,6 +6,7 @@ import 'core/theme/theme_controller.dart';
 import 'features/auth/presentation/auth_controller.dart';
 import 'features/auth/presentation/auth_view.dart';
 import 'features/auth/services/auth_service.dart';
+import 'features/onboarding/presentation/onboarding_view.dart';
 import 'shared/layouts/workspace_layout.dart';
 
 void main() {
@@ -17,9 +18,11 @@ class MentraRoot extends StatefulWidget {
   const MentraRoot({
     super.key,
     this.authService,
+    this.initialShowOnboarding = false,
   });
 
   final AuthService? authService;
+  final bool initialShowOnboarding;
 
   @override
   State<MentraRoot> createState() => _MentraRootState();
@@ -29,10 +32,12 @@ class _MentraRootState extends State<MentraRoot> {
   late final NavigationController _navigationController;
   late final ThemeController _themeController;
   late final AuthController _authController;
+  late bool _hasCompletedOnboarding;
 
   @override
   void initState() {
     super.initState();
+    _hasCompletedOnboarding = !widget.initialShowOnboarding;
     _navigationController = NavigationController();
     _themeController = ThemeController();
     _authController = AuthController(authService: widget.authService);
@@ -60,20 +65,26 @@ class _MentraRootState extends State<MentraRoot> {
             builder: (context, _) {
               Widget homeWidget;
 
-              switch (_authController.status) {
-                case AuthStatus.checking:
-                  homeWidget = const Scaffold(
-                    body: Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
-                  break;
-                case AuthStatus.authenticated:
-                  homeWidget = const WorkspaceLayout();
-                  break;
-                case AuthStatus.unauthenticated:
-                  homeWidget = const AuthView();
-                  break;
+              if (!_hasCompletedOnboarding) {
+                homeWidget = OnboardingView(
+                  onComplete: () => setState(() => _hasCompletedOnboarding = true),
+                );
+              } else {
+                switch (_authController.status) {
+                  case AuthStatus.checking:
+                    homeWidget = const Scaffold(
+                      body: Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                    break;
+                  case AuthStatus.authenticated:
+                    homeWidget = const WorkspaceLayout();
+                    break;
+                  case AuthStatus.unauthenticated:
+                    homeWidget = const AuthView();
+                    break;
+                }
               }
 
               return MaterialApp(

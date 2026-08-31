@@ -6,9 +6,15 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
+import 'mentra_button.dart';
 
 class MentraSidebar extends StatelessWidget {
-  const MentraSidebar({super.key});
+  const MentraSidebar({
+    super.key,
+    this.onStartStudySession,
+  });
+
+  final VoidCallback? onStartStudySession;
 
   @override
   Widget build(BuildContext context) {
@@ -34,13 +40,13 @@ class MentraSidebar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Subtle Wordmark & Branding Area
+          // Wordmark & Branding Area
           Padding(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.base,
               AppSpacing.lg,
               AppSpacing.base,
-              AppSpacing.base,
+              AppSpacing.sm,
             ),
             child: Row(
               children: [
@@ -88,6 +94,21 @@ class MentraSidebar extends StatelessWidget {
               ],
             ),
           ),
+
+          // Primary Quick Action Button
+          if (onStartStudySession != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.base,
+                vertical: AppSpacing.xs,
+              ),
+              child: MentraButton(
+                label: 'Start Session',
+                icon: Icons.play_arrow_rounded,
+                fullWidth: true,
+                onPressed: onStartStudySession,
+              ),
+            ),
 
           const SizedBox(height: AppSpacing.xs),
           Divider(color: theme.dividerColor, height: 1),

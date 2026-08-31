@@ -6,9 +6,10 @@ class MentraPageHeader extends StatelessWidget {
   const MentraPageHeader({
     super.key,
     required this.title,
-    this.subtitle,
+    String? subtitle,
+    String? description,
     this.action,
-  });
+  }) : subtitle = subtitle ?? description;
 
   final String title;
   final String? subtitle;

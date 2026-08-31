@@ -8,11 +8,17 @@ abstract class AppColors {
   static const Color primarySubtle = Color(0xFFEFF6FF);
   static const Color primarySubtleDark = Color(0xFF1E293B);
 
+  // Secondary / Feature Accents
+  static const Color accent = Color(0xFF8B5CF6); // Purple
+  static const Color accentSubtle = Color(0xFFF5F3FF);
+
   // Status & Telemetry Accents
   static const Color success = Color(0xFF10B981); // Emerald
   static const Color successSubtle = Color(0xFFECFDF5);
   static const Color warning = Color(0xFFF59E0B); // Amber
   static const Color warningSubtle = Color(0xFFFFFBEB);
+  static const Color error = Color(0xFFDC2626); // Red
+  static const Color errorSubtle = Color(0xFFFEF2F2);
   static const Color info = Color(0xFF6366F1); // Indigo
   static const Color infoSubtle = Color(0xFFEEF2FF);
 

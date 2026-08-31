@@ -1,89 +1,115 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../shared/widgets/mentra_badge.dart';
 import '../../../shared/widgets/mentra_card.dart';
 import '../../../shared/widgets/mentra_page_header.dart';
 import '../../../shared/widgets/mentra_section.dart';
 import '../../../shared/widgets/mentra_stat_card.dart';
-import '../data/mock_analytics.dart';
+import '../domain/models/analytics_data.dart';
+import '../domain/repositories/analytics_repository.dart';
 
-class AnalyticsPage extends StatelessWidget {
-  const AnalyticsPage({super.key});
+class AnalyticsPage extends StatefulWidget {
+  const AnalyticsPage({
+    super.key,
+    required this.analyticsRepository,
+  });
+
+  final AnalyticsRepository analyticsRepository;
+
+  @override
+  State<AnalyticsPage> createState() => _AnalyticsPageState();
+}
+
+class _AnalyticsPageState extends State<AnalyticsPage> {
+  AnalyticsSummaryModel? _data;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final res = await widget.analyticsRepository.getAnalyticsSummary();
+    if (!mounted) return;
+    setState(() {
+      _data = res;
+      _isLoading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+
+    if (_isLoading || _data == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final data = _data!;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const MentraPageHeader(
           title: 'Analytics',
-          subtitle: 'Your learning performance, telemetry insights, and focus history',
+          subtitle: 'Comprehensive study behavior, attention metrics, and distraction telemetry',
         ),
 
-        // Key Stat Cards
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final isNarrow = constraints.maxWidth < 600;
-            final cards = [
-              const MentraStatCard(
-                label: 'Focus Score',
-                value: MockAnalyticsData.overallFocusScore,
+        // Key Performance Indicators Row
+        Row(
+          children: [
+            Expanded(
+              child: MentraStatCard(
+                title: 'Total Study Time',
+                value: data.totalStudyTimeFormatted,
+                subtitle: 'Past 7 days',
+                icon: Icons.timer_outlined,
+                trendLabel: '+2h 15m',
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: MentraStatCard(
+                title: 'Sessions Completed',
+                value: '${data.totalSessionsCount}',
+                subtitle: '100% On-Device',
+                icon: Icons.check_circle_outline_rounded,
+                trendLabel: 'Optimal',
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: MentraStatCard(
+                title: 'Average Focus',
+                value: '${data.averageFocusScore}%',
+                subtitle: 'Attention Baseline',
+                icon: Icons.insights_outlined,
+                trendLabel: '+4%',
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: MentraStatCard(
+                title: 'Consistency Score',
+                value: '${data.consistencyScore}%',
+                subtitle: '5-day active streak',
                 icon: Icons.auto_graph_rounded,
-                iconColor: AppColors.success,
+                trendLabel: 'Strong',
               ),
-              const MentraStatCard(
-                label: 'Study Time',
-                value: MockAnalyticsData.totalStudyTime,
-                icon: Icons.access_time_rounded,
-              ),
-              const MentraStatCard(
-                label: 'Sessions',
-                value: MockAnalyticsData.totalSessions,
-                icon: Icons.calendar_today_outlined,
-              ),
-              const MentraStatCard(
-                label: 'Distractions',
-                value: MockAnalyticsData.totalDistractions,
-                icon: Icons.notifications_off_outlined,
-                iconColor: AppColors.warning,
-              ),
-            ];
-
-            if (isNarrow) {
-              return Column(
-                children: cards
-                    .map((c) => Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                          child: c,
-                        ))
-                    .toList(),
-              );
-            }
-
-            return Row(
-              children: cards
-                  .map((card) => Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-                          child: card,
-                        ),
-                      ))
-                  .toList(),
-            );
-          },
+            ),
+          ],
         ),
 
         const SizedBox(height: AppSpacing.xl),
 
-        // Focus Trend Section
+        // Focus Trend Bar Chart
         MentraSection(
-          title: 'Focus Trend',
-          subtitle: 'Weekly average focus performance',
+          title: 'Daily Focus & Attention Trend',
+          subtitle: 'Session focus score and minutes studied by day',
           child: MentraCard(
             padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
@@ -92,121 +118,127 @@ class AnalyticsPage extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Weekly Attention Average',
-                      style: AppTypography.titleSmall.copyWith(
-                        color: theme.colorScheme.onSurface,
-                      ),
+                    Row(
+                      children: [
+                        const Icon(Icons.show_chart_rounded, size: 18, color: AppColors.accent),
+                        const SizedBox(width: AppSpacing.xs),
+                        Text('Daily Attention Percentage', style: AppTypography.labelMedium),
+                      ],
                     ),
-                    Text(
-                      'Target: 80%+',
-                      style: AppTypography.labelSmall.copyWith(
-                        color: AppColors.success,
-                      ),
-                    ),
+                    const MentraBadge(label: 'Target: >80%', variant: MentraBadgeVariant.success),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.xl),
-                SizedBox(
-                  height: 140,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: MockAnalyticsData.weeklyTrend.map((point) {
-                      return Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Text(
-                            '${(point.score * 100).toInt()}%',
-                            style: AppTypography.labelSmall.copyWith(
-                              fontSize: 10,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
+                // Custom Interactive Bars
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: data.weeklyTrends.map((trend) {
+                    final height = (trend.focusScore * 1.5).toDouble();
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${trend.focusScore}%',
+                          style: AppTypography.labelSmall.copyWith(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: trend.focusScore >= 80
+                                ? AppColors.success
+                                : theme.colorScheme.onSurfaceVariant,
                           ),
-                          const SizedBox(height: 6),
-                          Container(
-                            width: 28,
-                            height: 90 * point.score,
-                            decoration: BoxDecoration(
-                              color: point.score >= 0.85
-                                  ? theme.colorScheme.primary
-                                  : theme.colorScheme.primary.withValues(alpha: 0.6),
-                              borderRadius: AppRadius.borderSm,
-                            ),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Container(
+                          width: 32,
+                          height: height,
+                          decoration: BoxDecoration(
+                            color: trend.focusScore >= 80
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.primary.withValues(alpha: 0.4),
+                            borderRadius: BorderRadius.circular(4),
                           ),
-                          const SizedBox(height: AppSpacing.sm),
-                          Text(
-                            point.day,
-                            style: AppTypography.labelSmall.copyWith(
-                              color: theme.colorScheme.onSurface,
-                              fontWeight: FontWeight.w600,
-                            ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          trend.dayLabel,
+                          style: AppTypography.labelSmall.copyWith(
+                            fontWeight: FontWeight.w600,
                           ),
-                        ],
-                      );
-                    }).toList(),
-                  ),
+                        ),
+                        Text(
+                          '${trend.studyMinutes}m',
+                          style: AppTypography.labelSmall.copyWith(
+                            fontSize: 10,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
                 ),
               ],
             ),
           ),
         ),
 
-        // Study Consistency & Subject Breakdown
+        const SizedBox(height: AppSpacing.xl),
+
+        // Distraction Breakdown Section
         MentraSection(
-          title: 'Subject Distribution',
-          subtitle: 'Hours spent per subject this week',
-          child: MentraCard(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Column(
-              children: MockAnalyticsData.subjectBreakdown.map((item) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            item.subject,
-                            style: AppTypography.bodySmall.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: theme.colorScheme.onSurface,
+          title: 'Distraction Telemetry Breakdown',
+          subtitle: 'Classification of interruptions detected during study blocks',
+          child: Row(
+            children: data.distractionBreakdown.map((category) {
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: AppSpacing.md),
+                  child: MentraCard(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                category.name,
+                                style: AppTypography.titleSmall.copyWith(fontWeight: FontWeight.w700),
+                              ),
                             ),
-                          ),
-                          Text(
-                            '${item.hours} hrs (${(item.percentage * 100).toInt()}%)',
-                            style: AppTypography.bodySmall.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                            MentraBadge(
+                              label: '${category.percentage}%',
+                              variant: category.percentage > 30
+                                  ? MentraBadgeVariant.danger
+                                  : MentraBadgeVariant.neutral,
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        height: 6,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF2C2C2C) : AppColors.lightBorder,
-                          borderRadius: AppRadius.borderFull,
+                          ],
                         ),
-                        child: FractionallySizedBox(
-                          alignment: Alignment.centerLeft,
-                          widthFactor: item.percentage,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.primary,
-                              borderRadius: AppRadius.borderFull,
-                            ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          '${category.count} events detected',
+                          style: AppTypography.bodySmall.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          category.trendLabel,
+                          style: AppTypography.labelSmall.copyWith(
+                            color: category.trendLabel.contains('-')
+                                ? AppColors.success
+                                : theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                );
-              }).toList(),
-            ),
+                ),
+              );
+            }).toList(),
           ),
         ),
       ],

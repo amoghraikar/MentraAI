@@ -8,10 +8,11 @@ class MentraEmptyState extends StatelessWidget {
     super.key,
     required this.icon,
     required this.title,
-    required this.description,
+    String? description,
+    String? subtitle,
     this.actionLabel,
     this.onAction,
-  });
+  }) : description = description ?? subtitle ?? '';
 
   final IconData icon;
   final String title;
@@ -50,17 +51,19 @@ class MentraEmptyState extends StatelessWidget {
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: AppSpacing.xs),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Text(
-                description,
-                style: AppTypography.bodySmall.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+            if (description.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.xs),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Text(
+                  description,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
               ),
-            ),
+            ],
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: AppSpacing.lg),
               MentraButton(
