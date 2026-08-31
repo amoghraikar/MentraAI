@@ -43,7 +43,7 @@ cd "$ROOT_DIR/apps/mentra"
 
 if [ -n "$1" ]; then
   TARGET_DEVICE="$1"
-elif which xcodebuild >/dev/null 2>&1 && xcode-select -p >/dev/null 2>&1; then
+elif xcrun xcodebuild -version >/dev/null 2>&1; then
   TARGET_DEVICE="macos"
 else
   TARGET_DEVICE="chrome"
