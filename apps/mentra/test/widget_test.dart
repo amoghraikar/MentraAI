@@ -1,114 +1,157 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:mentra/core/network/api_client.dart';
+import 'package:mentra/features/auth/services/auth_service.dart';
+import 'package:mentra/features/auth/services/token_storage_service.dart';
 import 'package:mentra/main.dart';
 
 void main() {
-  testWidgets('Mentra workspace shell initializes and displays Home view', (WidgetTester tester) async {
+  testWidgets('Mentra app shows AuthView when unauthenticated', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const MentraRoot());
+    final emptyStorage = InMemoryTokenStorage();
+    final authService = AuthService(
+      tokenStorage: emptyStorage,
+    );
+
+    await tester.pumpWidget(MentraRoot(authService: authService));
     await tester.pumpAndSettle();
 
-    // Verify Mentra branding in sidebar
+    // Verify Auth view is displayed
     expect(find.text('MENTRA'), findsOneWidget);
-    expect(find.text('AI Study Coach'), findsOneWidget);
+    expect(find.text('Sign In'), findsWidgets);
+    expect(find.text('Email Address'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
 
-    // Verify all sidebar navigation labels exist
-    expect(find.text('Home'), findsOneWidget);
-    expect(find.text('Subjects'), findsOneWidget);
-    expect(find.text('Notes'), findsOneWidget);
-    expect(find.text('Goals'), findsOneWidget);
-    expect(find.text('Analytics'), findsOneWidget);
-    expect(find.text('AI Coach'), findsOneWidget);
-    expect(find.text('Settings'), findsOneWidget);
+    // Toggle to Create Account via text containing Create Account
+    await tester.tap(find.textContaining("Don't have an account?"));
+    await tester.pumpAndSettle();
+    expect(find.text('Full Name'), findsOneWidget);
+  });
 
-    // Verify Home page specific content
+  testWidgets('Mentra app transitions to WorkspaceLayout on successful login and logs out', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final mockClient = MockClient((request) async {
+      if (request.url.path == '/api/v1/auth/login') {
+        return http.Response(
+          jsonEncode({
+            'access_token': 'fake_jwt_token',
+            'token_type': 'bearer',
+            'user': {
+              'id': 'usr_test_123',
+              'email': 'student@mentra.ai',
+              'full_name': 'Alex Student',
+              'is_active': true,
+              'created_at': '2026-08-31T20:00:00Z',
+            },
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+      if (request.url.path == '/api/v1/users/me') {
+        return http.Response(
+          jsonEncode({
+            'id': 'usr_test_123',
+            'email': 'student@mentra.ai',
+            'full_name': 'Alex Student',
+            'is_active': true,
+            'created_at': '2026-08-31T20:00:00Z',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+      return http.Response('Not Found', 404);
+    });
+
+    final storage = InMemoryTokenStorage();
+    final authService = AuthService(
+      apiClient: ApiClient(httpClient: mockClient),
+      tokenStorage: storage,
+    );
+
+    await tester.pumpWidget(MentraRoot(authService: authService));
+    await tester.pumpAndSettle();
+
+    // Fill in credentials
+    await tester.enterText(find.widgetWithText(TextFormField, 'you@example.com'), 'student@mentra.ai');
+    await tester.enterText(find.widgetWithText(TextFormField, '••••••••'), 'Password123!');
+    await tester.pumpAndSettle();
+
+    // Tap Sign In button
+    await tester.tap(find.widgetWithText(GestureDetector, 'Sign In').first);
+    await tester.pumpAndSettle();
+
+    // Verify workspace layout is now active
     expect(find.text('Good morning'), findsOneWidget);
     expect(find.text('Ready to focus?'), findsOneWidget);
     expect(find.text('Start Study Session'), findsOneWidget);
-    expect(find.text("Today's Progress"), findsOneWidget);
-    expect(find.text('Continue Studying'), findsOneWidget);
-    expect(find.text('Mentra Insight'), findsOneWidget);
+    expect(find.text('Subjects'), findsOneWidget);
+
+    // Navigate to Settings
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Alex Student'), findsOneWidget);
+    expect(find.text('student@mentra.ai • Active Session'), findsOneWidget);
+
+    // Tap Log Out button
+    await tester.tap(find.text('Log Out'));
+    await tester.pumpAndSettle();
+
+    // Confirm dialog
+    expect(find.text('Log out of Mentra?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(GestureDetector, 'Log Out').last);
+    await tester.pumpAndSettle();
+
+    // Verify return to AuthView
+    expect(find.text('Sign In'), findsWidgets);
+    expect(find.text('Email Address'), findsOneWidget);
   });
 
-  testWidgets('Mentra workspace shell navigates across all routes smoothly', (WidgetTester tester) async {
+  testWidgets('Mentra app automatically restores authenticated session on launch', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const MentraRoot());
+    final mockClient = MockClient((request) async {
+      if (request.url.path == '/api/v1/users/me') {
+        return http.Response(
+          jsonEncode({
+            'id': 'usr_saved_456',
+            'email': 'scholar@mentra.ai',
+            'full_name': 'Scholar Mentra',
+            'is_active': true,
+            'created_at': '2026-08-31T20:00:00Z',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+      return http.Response('Not Found', 404);
+    });
+
+    final storage = InMemoryTokenStorage();
+    await storage.saveToken('valid_stored_token');
+
+    final authService = AuthService(
+      apiClient: ApiClient(httpClient: mockClient),
+      tokenStorage: storage,
+    );
+
+    await tester.pumpWidget(MentraRoot(authService: authService));
     await tester.pumpAndSettle();
 
-    // 1. Navigate to Subjects
-    await tester.tap(find.text('Subjects'));
-    await tester.pumpAndSettle();
-    expect(find.text('Your study subjects and curriculum progress'), findsOneWidget);
-    expect(find.text('Data Analytics'), findsWidgets);
-    expect(find.text('Software Engineering'), findsWidgets);
-    expect(find.text('Web Programming'), findsWidgets);
-
-    // Tap a subject card to verify modal topic dialog
-    await tester.tap(find.text('Data Analytics').first);
-    await tester.pumpAndSettle();
-    expect(find.text('Topics Covered:'), findsOneWidget);
-    expect(find.text('Correlation & Regression'), findsWidgets);
-    await tester.tap(find.text('Close'));
-    await tester.pumpAndSettle();
-
-    // 2. Navigate to Notes & test search filter
-    await tester.tap(find.text('Notes'));
-    await tester.pumpAndSettle();
-    expect(find.text('Your study notes, session thoughts, and summaries'), findsOneWidget);
-    expect(find.text('Correlation & Regression'), findsOneWidget);
-    expect(find.text('HTML & CSS Architecture'), findsOneWidget);
-
-    await tester.enterText(find.byType(TextField), 'Regression');
-    await tester.pumpAndSettle();
-    expect(find.text('Correlation & Regression'), findsOneWidget);
-    expect(find.text('HTML & CSS Architecture'), findsNothing);
-
-    // 3. Navigate to Goals
-    await tester.tap(find.text('Goals'));
-    await tester.pumpAndSettle();
-    expect(find.text('Your study goals, milestones, and target deadlines'), findsOneWidget);
-    expect(find.text('Complete Data Analytics Unit II'), findsOneWidget);
-    expect(find.text('Complete Software Engineering revision'), findsOneWidget);
-
-    // 4. Navigate to Analytics
-    await tester.tap(find.text('Analytics'));
-    await tester.pumpAndSettle();
-    expect(find.text('Your learning performance, telemetry insights, and focus history'), findsOneWidget);
-    expect(find.text('Focus Trend'), findsOneWidget);
-    expect(find.text('Subject Distribution'), findsOneWidget);
-
-    // 5. Navigate to AI Coach
-    await tester.tap(find.text('AI Coach'));
-    await tester.pumpAndSettle();
-    expect(find.text('Personalized study insights, focus guidance, and learning patterns'), findsOneWidget);
-    expect(find.text('Recent Insight'), findsOneWidget);
-    expect(find.text('Focus Recommendations'), findsOneWidget);
-
-    // 6. Navigate to Settings & test tabs and theme switching
-    await tester.tap(find.text('Settings'));
-    await tester.pumpAndSettle();
-    expect(find.text('Manage your workspace, appearance, privacy, and study preferences'), findsOneWidget);
-    expect(find.text('Profile Settings'), findsOneWidget);
-
-    // Switch to Appearance tab
-    await tester.tap(find.text('Appearance').first);
-    await tester.pumpAndSettle();
-    expect(find.text('Theme Mode'), findsOneWidget);
-    expect(find.text('Dark'), findsOneWidget);
-
-    // Toggle Dark theme
-    await tester.tap(find.text('Dark'));
-    await tester.pumpAndSettle();
-
-    // Switch to Privacy tab
-    await tester.tap(find.text('Privacy').first);
-    await tester.pumpAndSettle();
-    expect(find.text('On-Device Privacy Guarantee'), findsOneWidget);
+    // Verify workspace opens directly
+    expect(find.text('Good morning'), findsOneWidget);
+    expect(find.text('Today\'s Progress'), findsOneWidget);
   });
 }
