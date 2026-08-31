@@ -1,0 +1,5 @@
+opencv-python-headless>=4.9.0
+mediapipe>=0.10.10
+numpy>=1.26.0,<2.0.0
+ultralytics>=8.1.0
+pytest>=8.0.0
