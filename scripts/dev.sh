@@ -38,11 +38,16 @@ cleanup() {
 }
 trap cleanup SIGINT SIGTERM EXIT
 
-# 3. Launch Flutter App
-echo "⚙️  3/3 Launching Mentra App..."
+# 3. Determine best Flutter target (Chrome if Xcode is missing)
 cd "$ROOT_DIR/apps/mentra"
 
-# If macOS desktop platform is selected or default to macos
-TARGET_DEVICE="${1:-macos}"
-echo "📱 Starting Flutter on target: $TARGET_DEVICE"
+if [ -n "$1" ]; then
+  TARGET_DEVICE="$1"
+elif which xcodebuild >/dev/null 2>&1 && xcode-select -p >/dev/null 2>&1; then
+  TARGET_DEVICE="macos"
+else
+  TARGET_DEVICE="chrome"
+fi
+
+echo "⚙️  3/3 Launching Mentra App on: $TARGET_DEVICE..."
 flutter run -d "$TARGET_DEVICE"
