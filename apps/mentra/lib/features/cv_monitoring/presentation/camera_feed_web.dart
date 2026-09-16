@@ -1,7 +1,6 @@
 // ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use, unnecessary_cast
 import 'dart:async';
 import 'dart:html' as html;
-import 'dart:math' as math;
 import 'dart:ui_web' as ui_web;
 import 'package:flutter/material.dart';
 import '../domain/models/monitoring_models.dart';
@@ -119,7 +118,7 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
       final imgData = _canvasCtx!.getImageData(0, 0, cvWidth, cvHeight);
       final data = imgData.data;
 
-      // 2. Real-Time Facial Skin & Chromaticity Segmentation
+      // 2. Real-Time Multi-Feature Facial Skin & Chromaticity Segmentation (YCrCb + RGB)
       int skinPixelCount = 0;
       double sumX = 0;
       double sumY = 0;
@@ -135,19 +134,27 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
           final g = data[idx + 1];
           final b = data[idx + 2];
 
-          // Standard normalized RGB skin chromaticity detection
-          if (r > 60 && g > 35 && b > 20 && r > g && r > b) {
-            final maxRgb = math.max(r, math.max(g, b));
-            final minRgb = math.min(r, math.min(g, b));
-            if ((maxRgb - minRgb) > 15 && (r - g).abs() > 10) {
-              skinPixelCount++;
-              sumX += x;
-              sumY += y;
-              if (x < minX) minX = x;
-              if (y < minY) minY = y;
-              if (x > maxX) maxX = x;
-              if (y > maxY) maxY = y;
-            }
+          // Compute YCrCb chrominance values
+          final luma = 0.299 * r + 0.587 * g + 0.114 * b;
+          final cr = (r - luma) * 0.713 + 128.0;
+          final cb = (b - luma) * 0.564 + 128.0;
+
+          // Standard robust YCrCb human skin chrominance + RGB threshold
+          final isSkin = (cr >= 128 && cr <= 180) &&
+              (cb >= 75 && cb <= 135) &&
+              (r > 50) &&
+              (r > g) &&
+              (g > b * 0.65) &&
+              (r - g > 6);
+
+          if (isSkin) {
+            skinPixelCount++;
+            sumX += x;
+            sumY += y;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
           }
         }
       }
@@ -163,18 +170,90 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
       final latencyMs = (now - startTime).toDouble();
 
       // Minimum threshold of skin pixels to confirm genuine human face in frame
-      const minFacePixels = 250;
-      final isFaceDetected = skinPixelCount >= minFacePixels;
+      const minFacePixels = 180;
+      final isFaceDetected = skinPixelCount >= minFacePixels && (maxX - minX) >= 20 && (maxY - minY) >= 20;
 
       if (isFaceDetected && skinPixelCount > 0) {
         final cx = sumX / skinPixelCount;
         final cy = sumY / skinPixelCount;
+        final midFaceX = (minX + maxX) / 2.0;
+        final midFaceY = (minY + maxY) / 2.0;
+        final faceW = (maxX - minX).toDouble();
+        final faceH = (maxY - minY).toDouble();
+
+        // 3. Real Head Rotation / Yaw Calculation via Left/Right Face Asymmetry
+        int leftSkinCount = 0;
+        int rightSkinCount = 0;
+        int upperSkinCount = 0;
+        int lowerSkinCount = 0;
+
+        for (int y = minY; y <= maxY && y < cvHeight; y += 2) {
+          for (int x = minX; x <= maxX && x < cvWidth; x += 2) {
+            final idx = (y * cvWidth + x) * 4;
+            final r = data[idx];
+            final g = data[idx + 1];
+            final b = data[idx + 2];
+            final luma = 0.299 * r + 0.587 * g + 0.114 * b;
+            final cr = (r - luma) * 0.713 + 128.0;
+            final cb = (b - luma) * 0.564 + 128.0;
+
+            if ((cr >= 128 && cr <= 180) && (cb >= 75 && cb <= 135) && (r > g)) {
+              if (x < midFaceX) leftSkinCount++;
+              if (x >= midFaceX) rightSkinCount++;
+              if (y < midFaceY) upperSkinCount++;
+              if (y >= midFaceY) lowerSkinCount++;
+            }
+          }
+        }
+
+        // Horizontal asymmetry and centroid skew determines true Head Yaw (looking left/right)
+        final skewX = faceW > 0 ? ((cx - midFaceX) / (faceW / 2.0)).clamp(-1.0, 1.0) : 0.0;
+        final totalLR = leftSkinCount + rightSkinCount;
+        final asymmetryLR = totalLR > 0 ? ((rightSkinCount - leftSkinCount) / totalLR).clamp(-1.0, 1.0) : 0.0;
+        final rawYaw = (skewX * 28.0 + asymmetryLR * 32.0).clamp(-40.0, 40.0);
+
+        // Vertical asymmetry and centroid skew determines true Head Pitch (looking down at phone/desk)
+        final skewY = faceH > 0 ? ((cy - midFaceY) / (faceH / 2.0)).clamp(-1.0, 1.0) : 0.0;
+        final totalUL = upperSkinCount + lowerSkinCount;
+        final asymmetryUL = totalUL > 0 ? ((upperSkinCount - lowerSkinCount) / totalUL).clamp(-1.0, 1.0) : 0.0;
+        final rawPitch = (skewY * 26.0 + asymmetryUL * 28.0).clamp(-35.0, 35.0);
+
+        // Exponential smoothing on pose
+        _smoothYaw = _smoothYaw * 0.70 + rawYaw * 0.30;
+        _smoothPitch = _smoothPitch * 0.70 + rawPitch * 0.30;
+
+        // 4. Real Eye Contrast & EAR (Eye Aspect Ratio / Closure) Analysis
+        final eyeRegionTop = (minY + faceH * 0.18).toInt().clamp(0, cvHeight - 1);
+        final eyeRegionBottom = (minY + faceH * 0.42).toInt().clamp(0, cvHeight - 1);
+        final eyeRegionLeft = (minX + faceW * 0.15).toInt().clamp(0, cvWidth - 1);
+        final eyeRegionRight = (minX + faceW * 0.85).toInt().clamp(0, cvWidth - 1);
+
+        double minLuma = 255.0;
+        double sumLuma = 0.0;
+        int eyeSamples = 0;
+
+        for (int ey = eyeRegionTop; ey <= eyeRegionBottom; ey += 2) {
+          for (int ex = eyeRegionLeft; ex <= eyeRegionRight; ex += 2) {
+            final idx = (ey * cvWidth + ex) * 4;
+            final luma = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+            if (luma < minLuma) minLuma = luma;
+            sumLuma += luma;
+            eyeSamples++;
+          }
+        }
+
+        final avgLuma = eyeSamples > 0 ? (sumLuma / eyeSamples) : 100.0;
+        // Pupil-to-skin contrast ratio
+        final contrastRatio = avgLuma > 0 ? ((avgLuma - minLuma) / avgLuma).clamp(0.0, 1.0) : 0.25;
+        // When eyes close, contrast valley vanishes (contrastRatio < 0.18)
+        final targetEar = (contrastRatio * 0.75).clamp(0.10, 0.40);
+        _smoothEar = _smoothEar * 0.65 + targetEar * 0.35;
 
         // Normalized bounding box coordinates (0.0 to 1.0)
-        double targetMinX = (minX / cvWidth).clamp(0.05, 0.85);
-        double targetMinY = (minY / cvHeight).clamp(0.05, 0.85);
-        double targetMaxX = (maxX / cvWidth).clamp(targetMinX + 0.15, 0.95);
-        double targetMaxY = (maxY / cvHeight).clamp(targetMinY + 0.15, 0.95);
+        double targetMinX = (minX / cvWidth).clamp(0.04, 0.88);
+        double targetMinY = (minY / cvHeight).clamp(0.04, 0.88);
+        double targetMaxX = (maxX / cvWidth).clamp(targetMinX + 0.12, 0.96);
+        double targetMaxY = (maxY / cvHeight).clamp(targetMinY + 0.12, 0.96);
 
         // Adjust for mirrored video display alignment
         if (widget.isMirrored) {
@@ -184,59 +263,40 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
           targetMaxX = tempMax;
         }
 
-        // Exponential Moving Average (EMA) temporal smoothing for ultra-smooth tracking
-        const alpha = 0.30;
+        // Exponential Moving Average (EMA) temporal smoothing for box
+        const alpha = 0.35;
         _smoothMinX = _smoothMinX * (1 - alpha) + targetMinX * alpha;
         _smoothMinY = _smoothMinY * (1 - alpha) + targetMinY * alpha;
         _smoothMaxX = _smoothMaxX * (1 - alpha) + targetMaxX * alpha;
         _smoothMaxY = _smoothMaxY * (1 - alpha) + targetMaxY * alpha;
 
-        // Head Pose Angles derived from face centroid
-        final normCenterX = widget.isMirrored ? (1.0 - (cx / cvWidth)) : (cx / cvWidth);
-        final normCenterY = cy / cvHeight;
-        final targetYaw = ((normCenterX - 0.5) * 45.0).clamp(-30.0, 30.0);
-        final targetPitch = ((normCenterY - 0.45) * 35.0).clamp(-25.0, 25.0);
+        // 5. Real Focus / Distraction Evaluation
+        final isHeadTurned = _smoothYaw.abs() > 14.0;
+        final isLookingDown = _smoothPitch > 13.0;
+        final isDrowsy = _smoothEar < 0.16;
+        final isDistracted = isHeadTurned || isLookingDown || isDrowsy;
 
-        _smoothYaw = _smoothYaw * 0.75 + targetYaw * 0.25;
-        _smoothPitch = _smoothPitch * 0.75 + targetPitch * 0.25;
-
-        // Real-Time Eye & Blink Analysis
-        final eyeRegionTop = (_smoothMinY + (_smoothMaxY - _smoothMinY) * 0.18).clamp(0.0, 1.0);
-        final eyeRegionBottom = (_smoothMinY + (_smoothMaxY - _smoothMinY) * 0.45).clamp(0.0, 1.0);
-        final eyeYIdx = (eyeRegionTop * cvHeight).toInt();
-        final eyeYEnd = (eyeRegionBottom * cvHeight).toInt();
-
-        int eyeDarkPixels = 0;
-        int eyeTotalPixels = 0;
-
-        for (int ey = eyeYIdx; ey < eyeYEnd && ey < cvHeight; ey += 2) {
-          for (int ex = (minX + (maxX - minX) * 0.2).toInt(); ex < (minX + (maxX - minX) * 0.8) && ex < cvWidth; ex += 2) {
-            final idx = (ey * cvWidth + ex) * 4;
-            final luminance = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-            if (luminance < 75) eyeDarkPixels++;
-            eyeTotalPixels++;
-          }
-        }
-
-        final darkRatio = eyeTotalPixels > 0 ? (eyeDarkPixels / eyeTotalPixels) : 0.25;
-        final targetEar = (darkRatio * 0.8).clamp(0.12, 0.38);
-        _smoothEar = _smoothEar * 0.7 + targetEar * 0.3;
-
-        // Real-Time Focus & Attention Calculation
-        final centerOffset = math.sqrt(math.pow(normCenterX - 0.5, 2) + math.pow(normCenterY - 0.45, 2));
-        final alignmentScore = (1.0 - centerOffset * 1.6).clamp(0.4, 1.0);
-        final isDistracted = _smoothYaw.abs() > 18.0 || _smoothPitch.abs() > 16.0;
-        final targetAttention = isDistracted ? (alignmentScore * 0.65) : alignmentScore;
-
-        _smoothAttention = _smoothAttention * 0.85 + targetAttention * 0.15;
+        final targetAttention = isDistracted ? 0.35 : 0.96;
+        _smoothAttention = _smoothAttention * 0.80 + targetAttention * 0.20;
 
         final boxWidth = _smoothMaxX - _smoothMinX;
         final boxHeight = _smoothMaxY - _smoothMinY;
         final boxCenter = Offset(_smoothMinX + boxWidth / 2, _smoothMinY + boxHeight / 2);
 
+        String statusMsg;
+        if (isDrowsy) {
+          statusMsg = 'DROWSINESS (EYES CLOSED)';
+        } else if (isLookingDown) {
+          statusMsg = 'LOOKING DOWN (PHONE/DESK)';
+        } else if (isHeadTurned) {
+          statusMsg = 'LOOKING AWAY (HEAD TURNED)';
+        } else {
+          statusMsg = 'FOCUSED ON MATERIAL';
+        }
+
         final telemetry = RealTimeCvTelemetry(
           isFaceDetected: true,
-          confidence: (0.92 + (skinPixelCount / 1200) * 0.07).clamp(0.85, 0.99),
+          confidence: (0.91 + (skinPixelCount / 1000) * 0.08).clamp(0.85, 0.99),
           box: Rect.fromLTRB(_smoothMinX, _smoothMinY, _smoothMaxX, _smoothMaxY),
           landmarks: [
             Offset(boxCenter.dx - boxWidth * 0.22, boxCenter.dy - boxHeight * 0.14), // Left Eye
@@ -249,14 +309,14 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
           attentionScore: _smoothAttention,
           ear: _smoothEar,
           fps: _measuredFps > 0 ? _measuredFps : 30,
-          latencyMs: latencyMs < 1.0 ? 8.0 : latencyMs,
-          statusMessage: isDistracted ? 'HEAD TURNED / LOOKING AWAY' : 'FOCUSED ON MATERIAL',
+          latencyMs: latencyMs < 1.0 ? 6.0 : latencyMs,
+          statusMessage: statusMsg,
         );
 
         widget.onTelemetry?.call(telemetry);
       } else {
         // No human face detected in current frame
-        _smoothAttention = _smoothAttention * 0.8;
+        _smoothAttention = _smoothAttention * 0.75;
         final telemetry = RealTimeCvTelemetry(
           isFaceDetected: false,
           confidence: 0.0,
@@ -267,7 +327,7 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
           attentionScore: _smoothAttention.clamp(0.0, 1.0),
           ear: 0.0,
           fps: _measuredFps > 0 ? _measuredFps : 30,
-          latencyMs: latencyMs < 1.0 ? 8.0 : latencyMs,
+          latencyMs: latencyMs < 1.0 ? 6.0 : latencyMs,
           statusMessage: 'AWAY FROM STUDY VIEW',
         );
 

@@ -125,10 +125,12 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
         border: Border.all(
           color: _showCvOverlay
               ? (_telemetry.isFaceDetected
-                  ? const Color(0xFF2EA043).withValues(alpha: 0.6)
-                  : Colors.orange.withValues(alpha: 0.6))
+                  ? (_telemetry.statusMessage.contains('FOCUSED')
+                      ? const Color(0xFF2EA043).withValues(alpha: 0.85)
+                      : Colors.amberAccent.withValues(alpha: 0.90))
+                  : Colors.orangeAccent.withValues(alpha: 0.90))
               : (isDark ? const Color(0xFF30363D) : const Color(0xFFE1E4E8)),
-          width: 1.5,
+          width: 2.0,
         ),
         boxShadow: [
           BoxShadow(
@@ -197,125 +199,153 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
 
             // Top HUD Telemetry Bar
             Positioned(
-              top: 10,
-              left: 12,
-              right: 12,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.70),
-                      borderRadius: AppRadius.borderSm,
-                      border: Border.all(
-                        color: _telemetry.isFaceDetected
-                            ? const Color(0xFF238636)
-                            : Colors.orange,
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
+              top: 8,
+              left: 8,
+              right: 8,
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.85),
+                          borderRadius: AppRadius.borderSm,
+                          border: Border.all(
                             color: _telemetry.isFaceDetected
-                                ? const Color(0xFF2EA043)
+                                ? (_telemetry.statusMessage.contains('FOCUSED')
+                                    ? const Color(0xFF238636)
+                                    : Colors.amber)
                                 : Colors.orange,
-                            shape: BoxShape.circle,
+                            width: 1.2,
                           ),
                         ),
-                        const SizedBox(width: 5),
-                        Text(
-                          _telemetry.isFaceDetected ? 'CV • ${_telemetry.fps} FPS' : 'NO FACE',
-                          style: TextStyle(
-                            color: _telemetry.isFaceDetected
-                                ? const Color(0xFF7EE787)
-                                : Colors.orangeAccent,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.5,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: _telemetry.isFaceDetected
+                                    ? (_telemetry.statusMessage.contains('FOCUSED')
+                                        ? const Color(0xFF2EA043)
+                                        : Colors.amberAccent)
+                                    : Colors.orange,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              _telemetry.isFaceDetected
+                                  ? (_telemetry.statusMessage.contains('FOCUSED')
+                                      ? 'CV • ${_telemetry.fps} FPS'
+                                      : _telemetry.statusMessage)
+                                  : 'NO FACE DETECTED',
+                              style: TextStyle(
+                                color: _telemetry.isFaceDetected
+                                    ? (_telemetry.statusMessage.contains('FOCUSED')
+                                        ? const Color(0xFF7EE787)
+                                        : Colors.amberAccent)
+                                    : Colors.orangeAccent,
+                                fontSize: 9.0,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (!widget.isCompact) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.75),
+                            borderRadius: AppRadius.borderSm,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.15),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.shield_outlined,
+                                size: 10,
+                                color: Colors.lightBlueAccent,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '100% Local',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                  fontSize: 9.0,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
-                    ),
+                    ],
                   ),
-                  if (!widget.isCompact)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.70),
-                        borderRadius: AppRadius.borderSm,
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.15),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.shield_outlined,
-                            size: 11,
-                            color: Colors.lightBlueAccent,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '100% Local',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
+                ),
               ),
             ),
 
             // Bottom Real-Time CV Metrics Readout
             Positioned(
-              bottom: widget.showControls ? 46 : 10,
-              left: 12,
-              right: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.80),
-                  borderRadius: AppRadius.borderSm,
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _buildMetricChip(
-                      label: 'ATTENTION',
-                      value: '${(_telemetry.attentionScore * 100).toInt()}%',
-                      color: _telemetry.attentionScore > 0.75
-                          ? const Color(0xFF7EE787)
-                          : (_telemetry.attentionScore > 0.4 ? Colors.amber : Colors.redAccent),
+              bottom: widget.showControls ? 44 : 8,
+              left: 8,
+              right: 8,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.85),
+                      borderRadius: AppRadius.borderSm,
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
                     ),
-                    _buildMetricChip(
-                      label: 'POSE (Y/P)',
-                      value: '${_telemetry.yaw.toInt()}° / ${_telemetry.pitch.toInt()}°',
-                      color: Colors.lightBlueAccent,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildMetricChip(
+                          label: 'ATTENTION',
+                          value: '${(_telemetry.attentionScore * 100).toInt()}%',
+                          color: _telemetry.attentionScore > 0.75
+                              ? const Color(0xFF7EE787)
+                              : (_telemetry.attentionScore > 0.4 ? Colors.amber : Colors.redAccent),
+                        ),
+                        const SizedBox(width: 10),
+                        _buildMetricChip(
+                          label: 'POSE (Y/P)',
+                          value: '${_telemetry.yaw.toInt()}° / ${_telemetry.pitch.toInt()}°',
+                          color: Colors.lightBlueAccent,
+                        ),
+                        const SizedBox(width: 10),
+                        _buildMetricChip(
+                          label: 'EAR',
+                          value: _telemetry.ear.toStringAsFixed(2),
+                          color: _telemetry.ear > 0.18 ? Colors.white70 : Colors.amber,
+                        ),
+                        if (!widget.isCompact) ...[
+                          const SizedBox(width: 10),
+                          _buildMetricChip(
+                            label: 'STATUS',
+                            value: _telemetry.isFaceDetected ? 'Tracked' : 'Absent',
+                            color: _telemetry.isFaceDetected ? const Color(0xFF7EE787) : Colors.orange,
+                          ),
+                        ],
+                      ],
                     ),
-                    _buildMetricChip(
-                      label: 'EAR BLINK',
-                      value: _telemetry.ear.toStringAsFixed(2),
-                      color: _telemetry.ear > 0.18 ? Colors.white70 : Colors.amber,
-                    ),
-                    if (!widget.isCompact)
-                      _buildMetricChip(
-                        label: 'STATUS',
-                        value: _telemetry.isFaceDetected ? 'Tracked' : 'Absent',
-                        color: _telemetry.isFaceDetected ? const Color(0xFF7EE787) : Colors.orange,
-                      ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -477,8 +507,14 @@ class _RealTimeFaceTrackingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final isDetected = telemetry.isFaceDetected;
+    final isDistracted = telemetry.statusMessage.contains('LOOKING') ||
+        telemetry.statusMessage.contains('DROWSINESS') ||
+        telemetry.statusMessage.contains('AWAY');
+
     final primaryColor = isDetected
-        ? const Color(0xFF2EA043).withValues(alpha: 0.85 + pulseValue * 0.15)
+        ? (isDistracted
+            ? Colors.amberAccent.withValues(alpha: 0.90 + pulseValue * 0.10)
+            : const Color(0xFF2EA043).withValues(alpha: 0.85 + pulseValue * 0.15))
         : Colors.orangeAccent.withValues(alpha: 0.85);
 
     final boxPaint = Paint()
@@ -487,11 +523,15 @@ class _RealTimeFaceTrackingPainter extends CustomPainter {
       ..strokeWidth = 2.0;
 
     final landmarkPaint = Paint()
-      ..color = isDetected ? const Color(0xFF58A6FF) : Colors.orangeAccent
+      ..color = isDetected
+          ? (isDistracted ? Colors.amberAccent : const Color(0xFF58A6FF))
+          : Colors.orangeAccent
       ..style = PaintingStyle.fill;
 
     final gazePaint = Paint()
-      ..color = isDetected ? const Color(0xFF388BFD) : Colors.orangeAccent
+      ..color = isDetected
+          ? (isDistracted ? Colors.amber : const Color(0xFF388BFD))
+          : Colors.orangeAccent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
 
@@ -528,7 +568,7 @@ class _RealTimeFaceTrackingPainter extends CustomPainter {
     canvas.drawRRect(
       r,
       Paint()
-        ..color = primaryColor.withValues(alpha: 0.10)
+        ..color = primaryColor.withValues(alpha: 0.12)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.0,
     );
@@ -557,16 +597,20 @@ class _RealTimeFaceTrackingPainter extends CustomPainter {
 
     // Dynamic Tracking Tag Above Real-Time Bounding Box
     final tagText = isDetected
-        ? 'FACE TRACKED (${(telemetry.confidence * 100).toStringAsFixed(1)}%)'
+        ? (isDistracted
+            ? telemetry.statusMessage
+            : 'FACE TRACKED (${(telemetry.confidence * 100).toStringAsFixed(0)}%)')
         : 'AWAY FROM VIEW';
 
     final textSpan = TextSpan(
       text: tagText,
       style: TextStyle(
-        color: isDetected ? const Color(0xFF7EE787) : Colors.orangeAccent,
-        fontSize: isCompact ? 9.0 : 10.5,
+        color: isDetected
+            ? (isDistracted ? Colors.amberAccent : const Color(0xFF7EE787))
+            : Colors.orangeAccent,
+        fontSize: isCompact ? 8.5 : 10.0,
         fontWeight: FontWeight.w800,
-        letterSpacing: 0.8,
+        letterSpacing: 0.6,
         backgroundColor: Colors.black.withValues(alpha: 0.85),
       ),
     );

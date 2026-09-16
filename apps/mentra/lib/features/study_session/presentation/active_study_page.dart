@@ -82,38 +82,41 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final isPaused = sessionController.state == SessionState.paused;
-    final config = sessionController.currentConfig;
-    final alertEvent = sessionController.latestAlertEvent;
-    final monitoringStatus = sessionController.monitoringStatus;
+    return ListenableBuilder(
+      listenable: sessionController,
+      builder: (context, _) {
+        final theme = Theme.of(context);
+        final isDark = theme.brightness == Brightness.dark;
+        final isPaused = sessionController.state == SessionState.paused;
+        final config = sessionController.currentConfig;
+        final alertEvent = sessionController.latestAlertEvent;
+        final monitoringStatus = sessionController.monitoringStatus;
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) {
-          _confirmEnd(context);
-        }
-      },
-      child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF12151A) : const Color(0xFFF7F8FA),
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth >= 900;
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) {
+              _confirmEnd(context);
+            }
+          },
+          child: Scaffold(
+            backgroundColor: isDark ? const Color(0xFF12151A) : const Color(0xFFF7F8FA),
+            body: SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth >= 900;
 
-              return Stack(
-                children: [
-                  // Main Body Area
-                  Positioned.fill(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 64, bottom: 20, left: 24, right: 24),
-                      child: isWide && _viewMode == StudyViewMode.split
-                          ? _buildWideSplitLayout(context, theme, isDark, isPaused, config, alertEvent, monitoringStatus)
-                          : _buildSingleColumnLayout(context, theme, isDark, isPaused, config, alertEvent, monitoringStatus, isWide),
-                    ),
-                  ),
+                  return Stack(
+                    children: [
+                      // Main Body Area
+                      Positioned.fill(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 64, bottom: 20, left: 24, right: 24),
+                          child: isWide && _viewMode == StudyViewMode.split
+                              ? _buildWideSplitLayout(context, theme, isDark, isPaused, config, alertEvent, monitoringStatus)
+                              : _buildSingleColumnLayout(context, theme, isDark, isPaused, config, alertEvent, monitoringStatus, isWide),
+                        ),
+                      ),
 
                   // Floating PiP Camera (when in PiP mode)
                   if (_viewMode == StudyViewMode.pip && !_isCameraMuted)
@@ -211,6 +214,8 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
           ),
         ),
       ),
+    );
+      },
     );
   }
 
@@ -510,17 +515,23 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
     switch (event.type) {
       case FocusEventType.drowsinessDetected:
         title = 'Drowsiness Detected';
-        message = 'Take a deep breath or quick stretch to stay sharp.';
+        message = 'Prolonged eye closure observed. Stretch or take a sip of water.';
         icon = Icons.bedtime_outlined;
         break;
       case FocusEventType.distractionDetected:
-        title = 'Distraction Signal';
-        message = 'Refocus your attention on your study material.';
+        final distrType = event.metadata['distraction_type'] as String?;
+        if (distrType == 'looking_down') {
+          title = 'Phone / Desk Distraction';
+          message = 'Gaze directed downward. Refocus on your active study topic.';
+        } else {
+          title = 'Head Turned / Looking Away';
+          message = 'Gaze directed away from study screen. Refocus on your material.';
+        }
         icon = Icons.visibility_off_outlined;
         break;
       case FocusEventType.faceAbsent:
         title = 'Away from Study View';
-        message = 'Your session timer is continuing.';
+        message = 'No face detected in camera view. Session timer continues.';
         icon = Icons.person_off_outlined;
         break;
       default:

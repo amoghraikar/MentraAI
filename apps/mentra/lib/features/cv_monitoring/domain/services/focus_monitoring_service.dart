@@ -114,28 +114,11 @@ class LocalFocusMonitoringService implements IFocusMonitoringService {
 
   void _startFramePipeline() {
     _frameThrottleTimer?.cancel();
-    // Controlled frame acquisition throttled to prevent CPU/battery drain
-    _frameThrottleTimer = Timer.periodic(
-      Duration(milliseconds: config.frameThrottleIntervalMs),
-      (_) => _processNextFrame(),
-    );
+    // In local production with live webcam, frames are ingested in real-time
+    // from the Web/Native camera pipeline via ingestObservation().
   }
 
-  void _processNextFrame() {
-    if (_status != MonitoringStatus.running || _isDisposed) return;
-
-    try {
-      // In local production operation: captures camera frame buffer, extracts face/eye landmarks,
-      // and converts to normalized FocusObservation.
-      // Privacy guarantee: No raw frame data is kept or sent over the network.
-      final observation = FocusObservation.focused(DateTime.now());
-      _eventEngine.ingestObservation(observation);
-    } catch (_) {
-      // Non-fatal frame error: log and continue to next frame without crashing session
-    }
-  }
-
-  /// Manually ingest observation (useful for external frame sources or platform plugins)
+  /// Ingest observation from real-time camera CV pipeline
   @override
   void ingestObservation(FocusObservation observation) {
     if (_status == MonitoringStatus.running && !_isDisposed) {
