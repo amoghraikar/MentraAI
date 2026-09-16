@@ -6,6 +6,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../shared/dialogs/mentra_dialogs.dart';
 import '../../../shared/widgets/mentra_badge.dart';
 import '../../../shared/widgets/mentra_button.dart';
+import '../../cv_monitoring/domain/models/monitoring_models.dart';
 import 'session_controller.dart';
 
 class ActiveStudyPage extends StatelessWidget {
@@ -31,12 +32,44 @@ class ActiveStudyPage extends StatelessWidget {
     return false;
   }
 
+  String _getMonitoringLabel(MonitoringStatus status, bool isPaused) {
+    if (isPaused) return 'Monitoring Paused';
+    switch (status) {
+      case MonitoringStatus.running:
+        return 'On-Device CV Active';
+      case MonitoringStatus.permissionDenied:
+        return 'Camera Disabled (Timer Mode)';
+      case MonitoringStatus.unavailable:
+        return 'Camera Unavailable';
+      case MonitoringStatus.error:
+        return 'Monitoring Offline';
+      default:
+        return 'On-Device Monitoring';
+    }
+  }
+
+  Color _getMonitoringStatusColor(MonitoringStatus status, bool isPaused) {
+    if (isPaused) return Colors.orange;
+    switch (status) {
+      case MonitoringStatus.running:
+        return AppColors.success;
+      case MonitoringStatus.permissionDenied:
+      case MonitoringStatus.unavailable:
+      case MonitoringStatus.error:
+        return Colors.grey;
+      default:
+        return AppColors.primary;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final isPaused = sessionController.state == SessionState.paused;
     final config = sessionController.currentConfig;
+    final alertEvent = sessionController.latestAlertEvent;
+    final monitoringStatus = sessionController.monitoringStatus;
 
     return PopScope(
       canPop: false,
@@ -57,6 +90,12 @@ class ActiveStudyPage extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // Alert Banner (Subtle, non-spammy, dismissible)
+                      if (alertEvent != null) ...[
+                        _buildAlertBanner(context, alertEvent, theme, isDark),
+                        const SizedBox(height: AppSpacing.lg),
+                      ],
+
                       // Subject and Topic Breadcrumb
                       Text(
                         config?.subjectTitle.toUpperCase() ?? 'DATA ANALYTICS',
@@ -117,7 +156,7 @@ class ActiveStudyPage extends StatelessWidget {
                                   width: 8,
                                   height: 8,
                                   decoration: BoxDecoration(
-                                    color: isPaused ? Colors.orange : AppColors.success,
+                                    color: _getMonitoringStatusColor(monitoringStatus, isPaused),
                                     shape: BoxShape.circle,
                                   ),
                                 ),
@@ -133,7 +172,7 @@ class ActiveStudyPage extends StatelessWidget {
                                 Text('•', style: AppTypography.labelSmall.copyWith(color: theme.dividerColor)),
                                 const SizedBox(width: AppSpacing.sm),
                                 Text(
-                                  'On-Device Monitoring',
+                                  _getMonitoringLabel(monitoringStatus, isPaused),
                                   style: AppTypography.labelSmall.copyWith(
                                     color: theme.colorScheme.onSurfaceVariant,
                                   ),
@@ -220,6 +259,84 @@ class ActiveStudyPage extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildAlertBanner(
+    BuildContext context,
+    FocusEvent event,
+    ThemeData theme,
+    bool isDark,
+  ) {
+    String title;
+    String message;
+    IconData icon;
+
+    switch (event.type) {
+      case FocusEventType.drowsinessDetected:
+        title = 'Drowsiness Detected';
+        message = 'Take a deep breath or quick stretch to stay sharp.';
+        icon = Icons.bedtime_outlined;
+        break;
+      case FocusEventType.distractionDetected:
+        title = 'Distraction Signal';
+        message = 'Refocus your attention on your study material.';
+        icon = Icons.visibility_off_outlined;
+        break;
+      case FocusEventType.faceAbsent:
+        title = 'Away from Study View';
+        message = 'Your session timer is continuing.';
+        icon = Icons.person_off_outlined;
+        break;
+      default:
+        title = 'Focus Notice';
+        message = event.message ?? 'Stay on track.';
+        icon = Icons.notifications_none_outlined;
+        break;
+    }
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 420),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF2A241E) : const Color(0xFFFFF8E6),
+        borderRadius: AppRadius.borderMd,
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.amber[700], size: 20),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: AppTypography.labelSmall.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.amber[200] : Colors.amber[900],
+                  ),
+                ),
+                Text(
+                  message,
+                  style: AppTypography.bodySmall.copyWith(
+                    fontSize: 12,
+                    color: isDark ? Colors.amber[100] : Colors.amber[800],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 16),
+            color: isDark ? Colors.amber[200] : Colors.amber[900],
+            onPressed: sessionController.dismissLatestAlert,
+            tooltip: 'Dismiss',
+          ),
+        ],
       ),
     );
   }

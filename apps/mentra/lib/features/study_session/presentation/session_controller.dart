@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../../cv_monitoring/domain/models/monitoring_models.dart';
+import '../../cv_monitoring/domain/services/focus_monitoring_service.dart';
 import '../domain/models/session_config.dart';
 import '../domain/models/study_session_record.dart';
 import '../domain/repositories/session_repository.dart';
@@ -14,11 +16,20 @@ enum SessionState {
 }
 
 class SessionController extends ChangeNotifier with WidgetsBindingObserver {
-  SessionController({this.sessionRepository}) {
+  SessionController({
+    this.sessionRepository,
+    IFocusMonitoringService? focusMonitoringService,
+  }) : focusMonitoringService =
+            focusMonitoringService ?? LocalFocusMonitoringService() {
     WidgetsBinding.instance.addObserver(this);
+    _initMonitoringSubscriptions();
   }
 
   final SessionRepository? sessionRepository;
+  final IFocusMonitoringService? focusMonitoringService;
+
+  StreamSubscription<FocusEvent>? _focusEventSub;
+  StreamSubscription<MonitoringStatus>? _focusStatusSub;
 
   SessionState _state = SessionState.idle;
   SessionConfig? _currentConfig;
@@ -35,6 +46,7 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
 
   int _distractionsCount = 0;
   int _focusScore = 88;
+  FocusEvent? _latestAlertEvent;
   SessionReflection _selectedReflection = SessionReflection.good;
   StudySessionRecord? _lastSavedRecord;
   bool _isSaving = false;
@@ -44,6 +56,7 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   int get targetSeconds => _targetSeconds;
   int get distractionsCount => _distractionsCount;
   int get focusScore => _focusScore;
+  FocusEvent? get latestAlertEvent => _latestAlertEvent;
   SessionReflection get selectedReflection => _selectedReflection;
   StudySessionRecord? get lastSavedRecord => _lastSavedRecord;
   bool get isSaving => _isSaving;
@@ -51,13 +64,54 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   DateTime? get pausedAt => _pausedAt;
   DateTime? get completedAt => _completedAt;
 
+  MonitoringStatus get monitoringStatus =>
+      focusMonitoringService?.status ?? MonitoringStatus.uninitialized;
+
+  void _initMonitoringSubscriptions() {
+    if (focusMonitoringService != null) {
+      _focusEventSub = focusMonitoringService!.eventStream.listen(_handleFocusEvent);
+      _focusStatusSub = focusMonitoringService!.statusStream.listen((_) {
+        notifyListeners();
+      });
+    }
+  }
+
+  void _handleFocusEvent(FocusEvent event) {
+    if (_state != SessionState.active) return;
+
+    if (event.type == FocusEventType.distractionDetected ||
+        event.type == FocusEventType.drowsinessDetected ||
+        event.type == FocusEventType.faceAbsent) {
+      _distractionsCount++;
+      _latestAlertEvent = event;
+      _recalculateFocusScore();
+      notifyListeners();
+    } else if (event.type == FocusEventType.focusPresent) {
+      if (_latestAlertEvent?.type == FocusEventType.faceAbsent) {
+        _latestAlertEvent = null;
+      }
+      notifyListeners();
+    }
+  }
+
+  void dismissLatestAlert() {
+    _latestAlertEvent = null;
+    notifyListeners();
+  }
+
+  void _recalculateFocusScore() {
+    final penalty = _distractionsCount * 3;
+    _focusScore = (92 - penalty).clamp(55, 98);
+  }
+
   /// Accurately computes elapsed study duration in seconds from real wall-clock timestamps.
   int get elapsedSeconds {
     if (_state == SessionState.completed) {
       return _finalElapsedSeconds;
     }
     if (_state == SessionState.active && _currentSegmentStartTime != null) {
-      final currentSegment = DateTime.now().difference(_currentSegmentStartTime!).inSeconds;
+      final currentSegment =
+          DateTime.now().difference(_currentSegmentStartTime!).inSeconds;
       return _accumulatedActiveSeconds + max(0, currentSegment);
     }
     return _accumulatedActiveSeconds;
@@ -99,12 +153,16 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     _finalElapsedSeconds = 0;
     _distractionsCount = 0;
     _focusScore = 88;
+    _latestAlertEvent = null;
     _sessionStartTime = null;
     _currentSegmentStartTime = null;
     _pausedAt = null;
     _completedAt = null;
     _lastSavedRecord = null;
     _isSaving = false;
+
+    // Initialize CV monitoring service
+    focusMonitoringService?.initialize();
 
     _state = SessionState.preparing;
     notifyListeners();
@@ -124,6 +182,10 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     _state = SessionState.active;
 
     _startTicker();
+
+    // Start CV Monitoring pipeline
+    focusMonitoringService?.start();
+
     notifyListeners();
     return true;
   }
@@ -138,10 +200,14 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     final now = DateTime.now();
     _pausedAt = now;
     if (_currentSegmentStartTime != null) {
-      _accumulatedActiveSeconds += max(0, now.difference(_currentSegmentStartTime!).inSeconds);
+      _accumulatedActiveSeconds +=
+          max(0, now.difference(_currentSegmentStartTime!).inSeconds);
     }
     _currentSegmentStartTime = null;
     _state = SessionState.paused;
+
+    // Pause CV Monitoring pipeline
+    focusMonitoringService?.pause();
 
     notifyListeners();
     return true;
@@ -158,6 +224,10 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     _state = SessionState.active;
 
     _startTicker();
+
+    // Resume CV Monitoring pipeline
+    focusMonitoringService?.resume();
+
     notifyListeners();
     return true;
   }
@@ -173,17 +243,16 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     _completedAt = now;
 
     if (_state == SessionState.active && _currentSegmentStartTime != null) {
-      _accumulatedActiveSeconds += max(0, now.difference(_currentSegmentStartTime!).inSeconds);
+      _accumulatedActiveSeconds +=
+          max(0, now.difference(_currentSegmentStartTime!).inSeconds);
     }
     _currentSegmentStartTime = null;
     _finalElapsedSeconds = _accumulatedActiveSeconds;
 
-    // Compute realistic focus score based on study duration and telemetry
-    final durationMins = max(1, (_finalElapsedSeconds / 60).round());
-    if (durationMins > 0) {
-      final penalty = _distractionsCount * 3;
-      _focusScore = (92 - penalty).clamp(55, 98);
-    }
+    // Stop CV Monitoring pipeline
+    focusMonitoringService?.stop();
+
+    _recalculateFocusScore();
 
     _state = SessionState.completed;
     notifyListeners();
@@ -238,6 +307,7 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   /// Cancel/abort session and return to idle.
   void cancelSession() {
     _ticker?.cancel();
+    focusMonitoringService?.stop();
     _state = SessionState.idle;
     _currentConfig = null;
     _sessionStartTime = null;
@@ -246,14 +316,16 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     _completedAt = null;
     _accumulatedActiveSeconds = 0;
     _finalElapsedSeconds = 0;
+    _latestAlertEvent = null;
     _isSaving = false;
     notifyListeners();
   }
 
-  /// Telemetry hook for recorded distractions (supports future Computer Vision events).
+  /// Telemetry hook for recorded distractions.
   void recordDistraction({String? category}) {
     if (_state == SessionState.active) {
       _distractionsCount++;
+      _recalculateFocusScore();
       notifyListeners();
     }
   }
@@ -278,7 +350,6 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // When returning from background or waking up from sleep, immediately update UI with wall-clock time
     if (state == AppLifecycleState.resumed && _state == SessionState.active) {
       if (elapsedSeconds >= _targetSeconds && _targetSeconds > 0) {
         endSession();
@@ -292,6 +363,9 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
+    _focusEventSub?.cancel();
+    _focusStatusSub?.cancel();
+    focusMonitoringService?.dispose();
     super.dispose();
   }
 }

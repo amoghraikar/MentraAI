@@ -6,6 +6,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/mentra_badge.dart';
 import '../../../shared/widgets/mentra_button.dart';
 import '../../../shared/widgets/mentra_card.dart';
+import '../../cv_monitoring/domain/models/monitoring_models.dart';
 import 'session_controller.dart';
 
 class StudyPrepPage extends StatelessWidget {
@@ -25,6 +26,7 @@ class StudyPrepPage extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final config = sessionController.currentConfig;
+    final monitoringStatus = sessionController.monitoringStatus;
 
     if (config == null) {
       return Center(
@@ -34,6 +36,13 @@ class StudyPrepPage extends StatelessWidget {
         ),
       );
     }
+
+    final isCameraDenied = monitoringStatus == MonitoringStatus.permissionDenied;
+    final isCameraUnavailable = monitoringStatus == MonitoringStatus.unavailable;
+    final cameraStatusLabel = isCameraDenied
+        ? 'Disabled (Timer Mode)'
+        : (isCameraUnavailable ? 'Unavailable' : 'Ready');
+    final isCameraGood = !isCameraDenied && !isCameraUnavailable;
 
     return Scaffold(
       body: Center(
@@ -146,8 +155,8 @@ class StudyPrepPage extends StatelessWidget {
                       children: [
                         _buildStatusRow(
                           label: 'Local Camera Permission',
-                          status: 'Ready',
-                          isGood: true,
+                          status: cameraStatusLabel,
+                          isGood: isCameraGood,
                           icon: Icons.videocam_outlined,
                         ),
                         const SizedBox(height: AppSpacing.sm),
