@@ -1,20 +1,21 @@
 import uuid
 from datetime import datetime
 from typing import List, TYPE_CHECKING
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from app.db.base import Base
 
 if TYPE_CHECKING:
-    from app.models.subject import Subject
+    from app.models.user import User
+    from app.models.topic import Topic
     from app.models.note import Note
     from app.models.goal import Goal
     from app.models.study_session import StudySession
 
 
-class User(Base):
-    __tablename__ = "users"
+class Subject(Base):
+    __tablename__ = "subjects"
 
     id: Mapped[str] = mapped_column(
         String(36),
@@ -22,23 +23,38 @@ class User(Base):
         default=lambda: str(uuid.uuid4()),
         index=True,
     )
-    email: Mapped[str] = mapped_column(
-        String(255),
-        unique=True,
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
         index=True,
-        nullable=False,
     )
-    full_name: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-    )
-    hashed_password: Mapped[str] = mapped_column(
+    title: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
     )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
+    code: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    description: Mapped[str] = mapped_column(
+        Text,
+        default="",
+        nullable=False,
+    )
+    color_hex: Mapped[str] = mapped_column(
+        String(20),
+        default="#4F46E5",
+        nullable=False,
+    )
+    total_hours: Mapped[float] = mapped_column(
+        Float,
+        default=0.0,
+        nullable=False,
+    )
+    target_hours: Mapped[float] = mapped_column(
+        Float,
+        default=20.0,
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -54,26 +70,27 @@ class User(Base):
     )
 
     # Relationships
-    subjects: Mapped[List["Subject"]] = relationship(
-        "Subject",
-        back_populates="user",
+    user: Mapped["User"] = relationship("User", back_populates="subjects")
+    topics: Mapped[List["Topic"]] = relationship(
+        "Topic",
+        back_populates="subject",
         cascade="all, delete-orphan",
     )
     notes: Mapped[List["Note"]] = relationship(
         "Note",
-        back_populates="user",
+        back_populates="subject",
         cascade="all, delete-orphan",
     )
     goals: Mapped[List["Goal"]] = relationship(
         "Goal",
-        back_populates="user",
+        back_populates="subject",
         cascade="all, delete-orphan",
     )
     study_sessions: Mapped[List["StudySession"]] = relationship(
         "StudySession",
-        back_populates="user",
+        back_populates="subject",
         cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
-        return f"<User id={self.id} email={self.email}>"
+        return f"<Subject id={self.id} title={self.title} code={self.code}>"

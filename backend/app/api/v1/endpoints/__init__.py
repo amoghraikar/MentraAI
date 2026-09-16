@@ -1,1 +1,12 @@
-"""API v1 endpoints package."""
+from app.api.v1.endpoints import auth, goals, health, notes, sessions, subjects, topics, users
+
+__all__ = [
+    "auth",
+    "goals",
+    "health",
+    "notes",
+    "sessions",
+    "subjects",
+    "topics",
+    "users",
+]
