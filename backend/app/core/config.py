@@ -25,6 +25,12 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: Union[List[str], str] = ["*"]
 
+    # AI LLM Provider Configuration
+    AI_PROVIDER: str = "auto"  # "auto", "openai", "gemini", or "heuristic"
+    OPENAI_API_KEY: Union[str, None] = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    GEMINI_API_KEY: Union[str, None] = None
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:

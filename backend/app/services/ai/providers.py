@@ -35,6 +35,103 @@ class BaseAiProvider(ABC):
         pass
 
 
+class OpenAiProvider(BaseAiProvider):
+    """Real OpenAI ChatGPT Provider implementation (GPT-4o, GPT-4o-mini, GPT-3.5-turbo)."""
+
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        self.fallback_provider = HeuristicAiProvider()
+
+    async def generate_text(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 800,
+    ) -> str:
+        if not self.api_key:
+            logger.info("OPENAI_API_KEY not configured. Falling back to Heuristic provider.")
+            return await self.fallback_provider.generate_text(prompt, system_prompt, temperature, max_tokens)
+
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                res.raise_for_status()
+                data = res.json()
+                content = data["choices"][0]["message"]["content"]
+                return content.strip()
+        except Exception as e:
+            logger.warning(f"OpenAI ChatGPT API request failed: {e}. Utilizing resilient fallback provider.")
+            return await self.fallback_provider.generate_text(prompt, system_prompt, temperature, max_tokens)
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        response_model: Type[T],
+        temperature: float = 0.5,
+    ) -> T:
+        if not self.api_key:
+            return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
+
+        schema_json = json.dumps(response_model.model_json_schema())
+        json_directive = (
+            f"IMPORTANT: You must respond ONLY with a raw JSON object strictly adhering to this schema:\n{schema_json}"
+        )
+
+        full_system = f"{system_prompt or ''}\n\n{json_directive}".strip()
+
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        messages = [
+            {"role": "system", "content": full_system},
+            {"role": "user", "content": prompt},
+        ]
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "response_format": {"type": "json_object"},
+            "max_tokens": 1200,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                res.raise_for_status()
+                data = res.json()
+                raw_text = data["choices"][0]["message"]["content"].strip()
+                parsed = json.loads(raw_text)
+                return response_model.model_validate(parsed)
+        except Exception as e:
+            logger.warning(f"Structured response parsing failed for OpenAI: {e}. Utilizing resilient fallback.")
+            return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
+
+
 class GeminiAiProvider(BaseAiProvider):
     """Google Gemini AI Provider implementation via standard REST API."""
 
@@ -69,7 +166,7 @@ class GeminiAiProvider(BaseAiProvider):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=15.0) as client:
                 res = await client.post(url, json=payload)
                 res.raise_for_status()
                 data = res.json()
@@ -237,10 +334,14 @@ class AiProviderFactory:
 
     @staticmethod
     def get_provider() -> BaseAiProvider:
-        provider_name = os.getenv("AI_PROVIDER", "gemini").lower()
-        if provider_name == "gemini" and os.getenv("GEMINI_API_KEY"):
+        provider_name = os.getenv("AI_PROVIDER", "auto").lower()
+
+        if provider_name == "openai" or (provider_name == "auto" and os.getenv("OPENAI_API_KEY")):
+            return OpenAiProvider()
+        elif provider_name == "gemini" or (provider_name == "auto" and os.getenv("GEMINI_API_KEY")):
             return GeminiAiProvider()
-        elif provider_name == "heuristic" or provider_name == "mock":
+        elif provider_name in ("heuristic", "mock"):
             return HeuristicAiProvider()
         else:
-            return GeminiAiProvider()
+            # If auto and no keys, fallback to Heuristic provider
+            return HeuristicAiProvider()
