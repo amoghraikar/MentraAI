@@ -7,6 +7,7 @@ import '../../../shared/widgets/mentra_badge.dart';
 import '../../../shared/widgets/mentra_button.dart';
 import '../../../shared/widgets/mentra_card.dart';
 import '../../cv_monitoring/domain/models/monitoring_models.dart';
+import '../../cv_monitoring/presentation/camera_preview_view.dart';
 import 'session_controller.dart';
 
 class StudyPrepPage extends StatelessWidget {
@@ -142,6 +143,32 @@ class StudyPrepPage extends StatelessWidget {
                   ),
 
                   const SizedBox(height: AppSpacing.lg),
+
+                  // Live Camera Alignment & CV Check Preview
+                  if (isCameraGood) ...[
+                    Text(
+                      'CAMERA ALIGNMENT & CV CHECK',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    ClipRRect(
+                      borderRadius: AppRadius.borderMd,
+                      child: const SizedBox(
+                        height: 200,
+                        width: double.infinity,
+                        child: CameraPreviewView(
+                          viewId: 'prep',
+                          isCompact: true,
+                          showControls: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                  ],
 
                   // Privacy & Hardware Check Indicators
                   Container(

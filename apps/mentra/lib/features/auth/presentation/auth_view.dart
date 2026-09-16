@@ -8,20 +8,33 @@ import '../../../shared/widgets/mentra_card.dart';
 import 'auth_controller.dart';
 
 class AuthView extends StatefulWidget {
-  const AuthView({super.key});
+  const AuthView({
+    super.key,
+    this.initialRegisterMode = false,
+    this.onBackToOnboarding,
+  });
+
+  final bool initialRegisterMode;
+  final VoidCallback? onBackToOnboarding;
 
   @override
   State<AuthView> createState() => _AuthViewState();
 }
 
 class _AuthViewState extends State<AuthView> {
-  bool _isRegisterMode = false;
+  late bool _isRegisterMode;
   bool _obscurePassword = true;
 
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _fullNameController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _isRegisterMode = widget.initialRegisterMode;
+  }
 
   @override
   void dispose() {
@@ -71,6 +84,22 @@ class _AuthViewState extends State<AuthView> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (widget.onBackToOnboarding != null) ...[
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: widget.onBackToOnboarding,
+                          icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                          label: const Text('Back to Introduction'),
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
+
                     // Brand Icon & Wordmark
                     Center(
                       child: Column(

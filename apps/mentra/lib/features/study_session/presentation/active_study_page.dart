@@ -7,15 +7,33 @@ import '../../../shared/dialogs/mentra_dialogs.dart';
 import '../../../shared/widgets/mentra_badge.dart';
 import '../../../shared/widgets/mentra_button.dart';
 import '../../cv_monitoring/domain/models/monitoring_models.dart';
+import '../../cv_monitoring/presentation/camera_preview_view.dart';
 import 'session_controller.dart';
 
-class ActiveStudyPage extends StatelessWidget {
+enum StudyViewMode {
+  split,
+  pip,
+  cameraProminent,
+  timerOnly,
+}
+
+class ActiveStudyPage extends StatefulWidget {
   const ActiveStudyPage({
     super.key,
     required this.sessionController,
   });
 
   final SessionController sessionController;
+
+  @override
+  State<ActiveStudyPage> createState() => _ActiveStudyPageState();
+}
+
+class _ActiveStudyPageState extends State<ActiveStudyPage> {
+  StudyViewMode _viewMode = StudyViewMode.split;
+  final bool _isCameraMuted = false;
+
+  SessionController get sessionController => widget.sessionController;
 
   Future<bool> _confirmEnd(BuildContext context) async {
     final shouldEnd = await MentraConfirmDialog.show(
@@ -79,187 +97,399 @@ class ActiveStudyPage extends StatelessWidget {
         }
       },
       child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF141414) : const Color(0xFFF9F9F8),
+        backgroundColor: isDark ? const Color(0xFF12151A) : const Color(0xFFF7F8FA),
         body: SafeArea(
-          child: Stack(
-            children: [
-              // Center Focus Area
-              Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Alert Banner (Subtle, non-spammy, dismissible)
-                      if (alertEvent != null) ...[
-                        _buildAlertBanner(context, alertEvent, theme, isDark),
-                        const SizedBox(height: AppSpacing.lg),
-                      ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isWide = constraints.maxWidth >= 900;
 
-                      // Subject and Topic Breadcrumb
-                      Text(
-                        config?.subjectTitle.toUpperCase() ?? 'DATA ANALYTICS',
-                        style: AppTypography.labelSmall.copyWith(
-                          letterSpacing: 2.0,
-                          fontWeight: FontWeight.w700,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        config?.topicTitle ?? 'Correlation & Regression',
-                        textAlign: TextAlign.center,
-                        style: AppTypography.titleLarge.copyWith(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 24,
-                        ),
-                      ),
-
-                      const SizedBox(height: AppSpacing.xxl),
-
-                      // Big Calm Focus Timer Display
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1C1C1C) : Colors.white,
-                          borderRadius: AppRadius.borderXl,
-                          border: Border.all(
-                            color: isPaused
-                                ? Colors.orange.withValues(alpha: 0.5)
-                                : theme.dividerColor,
-                            width: isPaused ? 1.5 : 1,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
-                              blurRadius: 20,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          children: [
-                            Text(
-                              sessionController.formattedRemainingTime,
-                              style: AppTypography.displayLarge.copyWith(
-                                fontSize: 72,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 2,
-                                height: 1.1,
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: _getMonitoringStatusColor(monitoringStatus, isPaused),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: AppSpacing.xs),
-                                Text(
-                                  isPaused ? 'Paused' : 'Focused',
-                                  style: AppTypography.labelSmall.copyWith(
-                                    color: isPaused ? Colors.orange : AppColors.success,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(width: AppSpacing.sm),
-                                Text('•', style: AppTypography.labelSmall.copyWith(color: theme.dividerColor)),
-                                const SizedBox(width: AppSpacing.sm),
-                                Text(
-                                  _getMonitoringLabel(monitoringStatus, isPaused),
-                                  style: AppTypography.labelSmall.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: AppSpacing.xxl),
-
-                      // Action Controls
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (isPaused)
-                            MentraButton(
-                              label: 'Resume Focus',
-                              icon: Icons.play_arrow_rounded,
-                              variant: MentraButtonVariant.primary,
-                              onPressed: sessionController.resumeSession,
-                            )
-                          else
-                            MentraButton(
-                              label: 'Pause',
-                              icon: Icons.pause_rounded,
-                              variant: MentraButtonVariant.secondary,
-                              onPressed: sessionController.pauseSession,
-                            ),
-                          const SizedBox(width: AppSpacing.base),
-                          MentraButton(
-                            label: 'End Session',
-                            icon: Icons.stop_rounded,
-                            variant: MentraButtonVariant.outline,
-                            onPressed: () => _confirmEnd(context),
-                          ),
-                        ],
-                      ),
-                    ],
+              return Stack(
+                children: [
+                  // Main Body Area
+                  Positioned.fill(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 64, bottom: 20, left: 24, right: 24),
+                      child: isWide && _viewMode == StudyViewMode.split
+                          ? _buildWideSplitLayout(context, theme, isDark, isPaused, config, alertEvent, monitoringStatus)
+                          : _buildSingleColumnLayout(context, theme, isDark, isPaused, config, alertEvent, monitoringStatus, isWide),
+                    ),
                   ),
-                ),
-              ),
 
-              // Top Status Bar
-              Positioned(
-                top: AppSpacing.lg,
-                left: AppSpacing.xl,
-                right: AppSpacing.xl,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
+                  // Floating PiP Camera (when in PiP mode)
+                  if (_viewMode == StudyViewMode.pip && !_isCameraMuted)
+                    Positioned(
+                      bottom: 24,
+                      right: 24,
+                      width: 240,
+                      height: 180,
+                      child: CameraPreviewView(
+                        viewId: 'active-pip',
+                        isCompact: true,
+                        showControls: true,
+                        onClose: () => setState(() => _viewMode = StudyViewMode.split),
+                      ),
+                    ),
+
+                  // Top Navigation & Status Bar
+                  Positioned(
+                    top: AppSpacing.md,
+                    left: AppSpacing.xl,
+                    right: AppSpacing.xl,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFE8E8E6),
-                            borderRadius: AppRadius.borderSm,
-                          ),
-                          child: Center(
-                            child: Text(
-                              'M',
-                              style: AppTypography.labelMedium.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: theme.colorScheme.primary,
+                        Row(
+                          children: [
+                            Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF21262D) : const Color(0xFFE8E8E6),
+                                borderRadius: AppRadius.borderSm,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  'M',
+                                  style: AppTypography.labelLarge.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Text(
+                              'MENTRA FOCUS & CV ENGINE',
+                              style: AppTypography.labelSmall.copyWith(
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Text('MENTRA FOCUS', style: AppTypography.labelSmall.copyWith(fontWeight: FontWeight.w700)),
+                        Row(
+                          children: [
+                            // View Switcher Buttons
+                            _buildViewModeToggle(
+                              icon: Icons.splitscreen_rounded,
+                              tooltip: 'Split View (Timer & Face CV)',
+                              mode: StudyViewMode.split,
+                            ),
+                            const SizedBox(width: 4),
+                            _buildViewModeToggle(
+                              icon: Icons.picture_in_picture_alt_rounded,
+                              tooltip: 'PiP Mode (Corner Camera)',
+                              mode: StudyViewMode.pip,
+                            ),
+                            const SizedBox(width: 4),
+                            _buildViewModeToggle(
+                              icon: Icons.videocam_rounded,
+                              tooltip: 'Focus on Face & CV Feed',
+                              mode: StudyViewMode.cameraProminent,
+                            ),
+                            const SizedBox(width: 4),
+                            _buildViewModeToggle(
+                              icon: Icons.timer_outlined,
+                              tooltip: 'Timer Only',
+                              mode: StudyViewMode.timerOnly,
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            const MentraBadge(
+                              label: 'LIVE SESSION',
+                              variant: MentraBadgeVariant.success,
+                              icon: Icons.circle,
+                            ),
+                          ],
+                        ),
                       ],
                     ),
-                    const MentraBadge(
-                      label: 'LIVE SESSION',
-                      variant: MentraBadgeVariant.success,
-                      icon: Icons.circle,
-                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildViewModeToggle({
+    required IconData icon,
+    required String tooltip,
+    required StudyViewMode mode,
+  }) {
+    final isActive = _viewMode == mode;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => setState(() => _viewMode = mode),
+          borderRadius: AppRadius.borderSm,
+          child: Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: isActive ? AppColors.primary.withValues(alpha: 0.2) : Colors.transparent,
+              borderRadius: AppRadius.borderSm,
+              border: Border.all(
+                color: isActive ? AppColors.primary : Colors.transparent,
+                width: 1,
+              ),
+            ),
+            child: Icon(
+              icon,
+              size: 16,
+              color: isActive ? AppColors.primary : Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWideSplitLayout(
+    BuildContext context,
+    ThemeData theme,
+    bool isDark,
+    bool isPaused,
+    dynamic config,
+    FocusEvent? alertEvent,
+    MonitoringStatus monitoringStatus,
+  ) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Left Column: Timer, Goals, Controls
+        Expanded(
+          flex: 5,
+          child: Center(
+            child: SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (alertEvent != null) ...[
+                      _buildAlertBanner(context, alertEvent, theme, isDark),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
+                    _buildSubjectHeader(theme, config),
+                    const SizedBox(height: AppSpacing.xl),
+                    _buildTimerCard(theme, isDark, isPaused, monitoringStatus),
+                    const SizedBox(height: AppSpacing.xl),
+                    _buildActionControls(context, isPaused),
                   ],
                 ),
               ),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xl),
+        // Right Column: Live Real-Time Camera CV View
+        Expanded(
+          flex: 6,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 620, maxHeight: 520),
+              child: const CameraPreviewView(
+                viewId: 'active-split',
+                isCompact: false,
+                showControls: true,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSingleColumnLayout(
+    BuildContext context,
+    ThemeData theme,
+    bool isDark,
+    bool isPaused,
+    dynamic config,
+    FocusEvent? alertEvent,
+    MonitoringStatus monitoringStatus,
+    bool isWide,
+  ) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 580),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (alertEvent != null) ...[
+                _buildAlertBanner(context, alertEvent, theme, isDark),
+                const SizedBox(height: AppSpacing.lg),
+              ],
+              _buildSubjectHeader(theme, config),
+              const SizedBox(height: AppSpacing.lg),
+
+              // If Camera Prominent, show Camera on top!
+              if (_viewMode == StudyViewMode.cameraProminent) ...[
+                const SizedBox(
+                  height: 320,
+                  width: double.infinity,
+                  child: CameraPreviewView(
+                    viewId: 'active-prominent',
+                    isCompact: false,
+                    showControls: true,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+              ],
+
+              // Main Timer Card
+              _buildTimerCard(theme, isDark, isPaused, monitoringStatus),
+
+              // If Split on mobile / single column, show Camera below timer
+              if (_viewMode == StudyViewMode.split && !isWide) ...[
+                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(
+                  height: 240,
+                  width: double.infinity,
+                  child: CameraPreviewView(
+                    viewId: 'active-mobile-split',
+                    isCompact: true,
+                    showControls: true,
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: AppSpacing.xl),
+              _buildActionControls(context, isPaused),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSubjectHeader(ThemeData theme, dynamic config) {
+    return Column(
+      children: [
+        Text(
+          config?.subjectTitle.toUpperCase() ?? 'ACTIVE STUDY TOPIC',
+          style: AppTypography.labelSmall.copyWith(
+            letterSpacing: 2.0,
+            fontWeight: FontWeight.w700,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xxs),
+        Text(
+          config?.topicTitle ?? 'Focused Study Session',
+          textAlign: TextAlign.center,
+          style: AppTypography.titleLarge.copyWith(
+            fontWeight: FontWeight.w800,
+            fontSize: 22,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimerCard(
+    ThemeData theme,
+    bool isDark,
+    bool isPaused,
+    MonitoringStatus monitoringStatus,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 22),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF181C24) : Colors.white,
+        borderRadius: AppRadius.borderXl,
+        border: Border.all(
+          color: isPaused
+              ? Colors.orange.withValues(alpha: 0.5)
+              : theme.dividerColor,
+          width: isPaused ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Text(
+            sessionController.formattedRemainingTime,
+            style: AppTypography.displayLarge.copyWith(
+              fontSize: 68,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: _getMonitoringStatusColor(monitoringStatus, isPaused),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                isPaused ? 'Paused' : 'Focused',
+                style: AppTypography.labelSmall.copyWith(
+                  color: isPaused ? Colors.orange : AppColors.success,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text('•', style: AppTypography.labelSmall.copyWith(color: theme.dividerColor)),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                _getMonitoringLabel(monitoringStatus, isPaused),
+                style: AppTypography.labelSmall.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionControls(BuildContext context, bool isPaused) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (isPaused)
+          MentraButton(
+            label: 'Resume Focus',
+            icon: Icons.play_arrow_rounded,
+            variant: MentraButtonVariant.primary,
+            onPressed: sessionController.resumeSession,
+          )
+        else
+          MentraButton(
+            label: 'Pause',
+            icon: Icons.pause_rounded,
+            variant: MentraButtonVariant.secondary,
+            onPressed: sessionController.pauseSession,
+          ),
+        const SizedBox(width: AppSpacing.base),
+        MentraButton(
+          label: 'End Session',
+          icon: Icons.stop_rounded,
+          variant: MentraButtonVariant.outline,
+          onPressed: () => _confirmEnd(context),
+        ),
+      ],
     );
   }
 
@@ -297,7 +527,7 @@ class ActiveStudyPage extends StatelessWidget {
     }
 
     return Container(
-      constraints: const BoxConstraints(maxWidth: 420),
+      constraints: const BoxConstraints(maxWidth: 460),
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF2A241E) : const Color(0xFFFFF8E6),

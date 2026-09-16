@@ -36,24 +36,24 @@ void main() {
     // Step 2
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
-    expect(find.text('STRUCTURE & CLARITY'), findsOneWidget);
+    expect(find.text('LIVE COMPUTER VISION'), findsOneWidget);
 
     // Step 3
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
-    expect(find.text('LOCAL FOCUS MONITORING'), findsOneWidget);
+    expect(find.text('STRUCTURE & MASTERY'), findsOneWidget);
 
     // Step 4
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
-    expect(find.text('PERSONALIZED COACHING'), findsOneWidget);
+    expect(find.text('ADAPTIVE AI COACH'), findsOneWidget);
     expect(find.text('Get Started'), findsOneWidget);
 
     // Complete Onboarding -> Auth
     await tester.tap(find.text('Get Started'));
     await tester.pumpAndSettle();
 
-    expect(find.text('MENTRA'), findsOneWidget);
+    expect(find.text('MENTRA'), findsWidgets);
     expect(find.text('Sign In'), findsWidgets);
   });
 
@@ -104,6 +104,7 @@ void main() {
 
     await tester.pumpWidget(MentraRoot(
       authService: authService,
+      initialShowOnboarding: false,
       subjectRepository: MockSubjectRepository(),
       noteRepository: MockNoteRepository(),
       goalRepository: MockGoalRepository(),
@@ -228,6 +229,7 @@ void main() {
 
     await tester.pumpWidget(MentraRoot(
       authService: authService,
+      initialShowOnboarding: false,
       subjectRepository: MockSubjectRepository(),
       noteRepository: MockNoteRepository(),
       goalRepository: MockGoalRepository(),
@@ -249,9 +251,10 @@ void main() {
     expect(find.text('Local Camera Permission'), findsOneWidget);
 
     // 2. Start Active Session -> Stage 3: Active Study
+    await tester.ensureVisible(find.widgetWithText(GestureDetector, 'Start Session'));
     await tester.tap(find.widgetWithText(GestureDetector, 'Start Session'));
     await tester.pumpAndSettle();
-    expect(find.text('MENTRA FOCUS'), findsOneWidget);
+    expect(find.textContaining('MENTRA FOCUS'), findsOneWidget);
     expect(find.text('LIVE SESSION'), findsOneWidget);
     expect(find.text('Pause'), findsOneWidget);
 

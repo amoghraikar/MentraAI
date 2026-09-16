@@ -24,7 +24,7 @@ class MentraRoot extends StatefulWidget {
   const MentraRoot({
     super.key,
     this.authService,
-    this.initialShowOnboarding = false,
+    this.initialShowOnboarding = true,
     this.subjectRepository,
     this.noteRepository,
     this.goalRepository,
@@ -51,6 +51,7 @@ class _MentraRootState extends State<MentraRoot> {
   late final ThemeController _themeController;
   late final AuthController _authController;
   late bool _hasCompletedOnboarding;
+  bool _startInRegisterMode = false;
 
   @override
   void initState() {
@@ -83,9 +84,26 @@ class _MentraRootState extends State<MentraRoot> {
             builder: (context, _) {
               Widget homeWidget;
 
-              if (!_hasCompletedOnboarding) {
+              if (!_hasCompletedOnboarding && _authController.status != AuthStatus.authenticated) {
                 homeWidget = OnboardingView(
-                  onComplete: () => setState(() => _hasCompletedOnboarding = true),
+                  onComplete: () {
+                    setState(() {
+                      _startInRegisterMode = false;
+                      _hasCompletedOnboarding = true;
+                    });
+                  },
+                  onSignIn: () {
+                    setState(() {
+                      _startInRegisterMode = false;
+                      _hasCompletedOnboarding = true;
+                    });
+                  },
+                  onSignUp: () {
+                    setState(() {
+                      _startInRegisterMode = true;
+                      _hasCompletedOnboarding = true;
+                    });
+                  },
                 );
               } else {
                 switch (_authController.status) {
@@ -107,7 +125,12 @@ class _MentraRootState extends State<MentraRoot> {
                     );
                     break;
                   case AuthStatus.unauthenticated:
-                    homeWidget = const AuthView();
+                    homeWidget = AuthView(
+                      initialRegisterMode: _startInRegisterMode,
+                      onBackToOnboarding: () {
+                        setState(() => _hasCompletedOnboarding = false);
+                      },
+                    );
                     break;
                 }
               }

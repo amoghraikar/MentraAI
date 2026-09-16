@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
@@ -9,9 +10,13 @@ class OnboardingView extends StatefulWidget {
   const OnboardingView({
     super.key,
     required this.onComplete,
+    this.onSignIn,
+    this.onSignUp,
   });
 
   final VoidCallback onComplete;
+  final VoidCallback? onSignIn;
+  final VoidCallback? onSignUp;
 
   @override
   State<OnboardingView> createState() => _OnboardingViewState();
@@ -23,33 +28,45 @@ class _OnboardingViewState extends State<OnboardingView> {
   final List<Map<String, dynamic>> _steps = [
     {
       'badge': 'WELCOME TO MENTRA',
-      'title': 'Understand your focus.\nImprove your learning.',
-      'description': 'A calm, Notion-inspired study workspace designed to help you master challenging subjects through focused sessions and intelligent behavioral insights.',
+      'title': 'Master your studies with an\nIntelligent AI Study Coach.',
+      'description': 'A calm, distraction-free workspace combining structured topic mastery, intelligent notes, and local behavioral guidance to help you reach peak academic performance.',
       'icon': Icons.psychology_outlined,
+      'highlight': 'Built for focused students & deep learners',
     },
     {
-      'badge': 'STRUCTURE & CLARITY',
-      'title': 'Organize your subjects,\ntopics, and notes.',
-      'description': 'Structure coursework by subjects, break them down into bite-sized topics, track milestone progress, and capture lecture notes in one distraction-free environment.',
-      'icon': Icons.folder_outlined,
-    },
-    {
-      'badge': 'LOCAL FOCUS MONITORING',
-      'title': 'Deep focus sessions with\non-device privacy.',
-      'description': 'Study with gentle fatigue and distraction nudges. All computer vision analysis runs 100% locally on your machine without storing or streaming raw video.',
+      'badge': 'LIVE COMPUTER VISION',
+      'title': 'Live Face & Gaze Tracking\nwith 100% On-Device Privacy.',
+      'description': 'Observe your real-time attention score, gaze alignment, and blink rates during study sessions. All computer vision analysis executes locally in-memory on your hardware without transmitting video.',
       'icon': Icons.visibility_outlined,
+      'highlight': 'Real-time focus HUD • Zero cloud video streaming',
     },
     {
-      'badge': 'PERSONALIZED COACHING',
-      'title': 'Actionable analytics &\nstudy recommendations.',
-      'description': 'Understand your peak attention hours, detect recurring distraction triggers, and receive adaptive recommendations from your personal AI Study Coach.',
+      'badge': 'STRUCTURE & MASTERY',
+      'title': 'Organize subjects, notes,\nand active milestones.',
+      'description': 'Break complex coursework down into manageable topics, maintain persistent revision notes, and track your retention and study hours with precision.',
+      'icon': Icons.folder_outlined,
+      'highlight': 'Structured hierarchy • Rich notes & goal tracking',
+    },
+    {
+      'badge': 'ADAPTIVE AI COACH',
+      'title': 'Actionable analytics &\nproactive study interventions.',
+      'description': 'Mentra learns your fatigue patterns, optimal study windows, and distraction triggers to provide tailored recommendations, break reminders, and motivating guidance.',
       'icon': Icons.auto_awesome_outlined,
+      'highlight': 'Personalized insights • LLM coaching & support',
     },
   ];
 
   void _next() {
     if (_currentStep < _steps.length - 1) {
       setState(() => _currentStep++);
+    } else {
+      widget.onComplete();
+    }
+  }
+
+  void _goToSignIn() {
+    if (widget.onSignIn != null) {
+      widget.onSignIn!();
     } else {
       widget.onComplete();
     }
@@ -63,49 +80,76 @@ class _OnboardingViewState extends State<OnboardingView> {
     final isLast = _currentStep == _steps.length - 1;
 
     return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0F1216) : const Color(0xFFF7F8FA),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppSpacing.xl),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
+            constraints: const BoxConstraints(maxWidth: 520),
             child: MentraCard(
-              padding: const EdgeInsets.all(AppSpacing.xl),
+              padding: const EdgeInsets.all(AppSpacing.xxl),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // App Icon & Progress Dots
+                  // App Brand Header & Step Indicator
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFE8E8E6),
-                          borderRadius: AppRadius.borderSm,
-                        ),
-                        child: Center(
-                          child: Text(
-                            'M',
-                            style: AppTypography.titleLarge.copyWith(
-                              fontWeight: FontWeight.w800,
-                              color: theme.colorScheme.primary,
-                              height: 1,
+                      Row(
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF232830) : const Color(0xFFE8E8E6),
+                              borderRadius: AppRadius.borderSm,
+                            ),
+                            child: Center(
+                              child: Text(
+                                'M',
+                                style: AppTypography.titleLarge.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: theme.colorScheme.primary,
+                                  height: 1,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                AppConstants.appName.toUpperCase(),
+                                style: AppTypography.labelLarge.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                              Text(
+                                AppConstants.appCategory,
+                                style: AppTypography.labelSmall.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                       Row(
                         children: List.generate(_steps.length, (index) {
                           final isActive = index == _currentStep;
                           return AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            margin: const EdgeInsets.only(left: AppSpacing.xs),
-                            width: isActive ? 20 : 6,
+                            duration: const Duration(milliseconds: 250),
+                            margin: const EdgeInsets.only(left: 6),
+                            width: isActive ? 24 : 8,
                             height: 6,
                             decoration: BoxDecoration(
-                              color: isActive ? theme.colorScheme.primary : theme.dividerColor,
+                              color: isActive
+                                  ? theme.colorScheme.primary
+                                  : theme.dividerColor,
                               borderRadius: BorderRadius.circular(3),
                             ),
                           );
@@ -116,43 +160,68 @@ class _OnboardingViewState extends State<OnboardingView> {
 
                   const SizedBox(height: AppSpacing.xl),
 
-                  // Step Icon
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: isDark ? 0.15 : 0.08),
-                      borderRadius: AppRadius.borderMd,
-                      border: Border.all(
-                        color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                  // Feature Icon & Highlight Badge
+                  Row(
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withValues(alpha: isDark ? 0.18 : 0.08),
+                          borderRadius: AppRadius.borderMd,
+                          border: Border.all(
+                            color: theme.colorScheme.primary.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Icon(
+                          step['icon'] as IconData,
+                          size: 26,
+                          color: theme.colorScheme.primary,
+                        ),
                       ),
-                    ),
-                    child: Icon(
-                      step['icon'] as IconData,
-                      size: 24,
-                      color: theme.colorScheme.primary,
-                    ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              step['badge'] as String,
+                              style: AppTypography.labelSmall.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.4,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF1E232B) : const Color(0xFFEEF2F6),
+                                borderRadius: AppRadius.borderSm,
+                              ),
+                              child: Text(
+                                step['highlight'] as String,
+                                style: AppTypography.bodySmall.copyWith(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? const Color(0xFF9EABB8) : const Color(0xFF4A5568),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
 
                   const SizedBox(height: AppSpacing.lg),
-
-                  // Step Badge
-                  Text(
-                    step['badge'] as String,
-                    style: AppTypography.labelSmall.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-
-                  const SizedBox(height: AppSpacing.sm),
 
                   // Step Title
                   Text(
                     step['title'] as String,
                     style: AppTypography.titleLarge.copyWith(
                       fontWeight: FontWeight.w800,
+                      fontSize: 23,
                       height: 1.25,
                       color: theme.colorScheme.onSurface,
                     ),
@@ -165,15 +234,16 @@ class _OnboardingViewState extends State<OnboardingView> {
                     step['description'] as String,
                     style: AppTypography.bodyMedium.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
-                      height: 1.5,
+                      height: 1.55,
+                      fontSize: 14,
                     ),
                   ),
 
-                  const SizedBox(height: AppSpacing.xl),
+                  const SizedBox(height: AppSpacing.xxl),
                   Divider(color: theme.dividerColor, height: 1),
                   const SizedBox(height: AppSpacing.lg),
 
-                  // Action Buttons
+                  // Action Buttons & Sign In / Sign Up CTAs
                   Row(
                     children: [
                       if (_currentStep > 0) ...[
@@ -186,10 +256,20 @@ class _OnboardingViewState extends State<OnboardingView> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: AppSpacing.sm),
+                      ] else ...[
+                        TextButton(
+                          onPressed: _goToSignIn,
+                          child: Text(
+                            'Sign In',
+                            style: AppTypography.labelMedium.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
                       ],
                       const Spacer(),
-                      if (!isLast)
+                      if (!isLast) ...[
                         TextButton(
                           onPressed: widget.onComplete,
                           child: Text(
@@ -199,7 +279,8 @@ class _OnboardingViewState extends State<OnboardingView> {
                             ),
                           ),
                         ),
-                      const SizedBox(width: AppSpacing.sm),
+                        const SizedBox(width: AppSpacing.sm),
+                      ],
                       MentraButton(
                         label: isLast ? 'Get Started' : 'Continue',
                         icon: isLast ? Icons.arrow_forward_rounded : null,
