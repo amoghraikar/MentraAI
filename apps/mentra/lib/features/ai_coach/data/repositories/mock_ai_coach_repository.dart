@@ -40,14 +40,14 @@ class MockAiCoachRepository implements AiCoachRepository {
       ChatMessage(
         id: 'msg_1',
         sender: 'coach',
-        text: 'Good day! I have analyzed your recent study sessions. Your focus is strongest in the morning during 45-minute blocks. How can I help with your study plan today?',
+        text: "Good day! I'm Mentra, your AI Study Coach. I have analyzed your recent study sessions. Your focus is strongest in the morning during 45-minute blocks. How can I help with your study plan today?",
         timestamp: now.subtract(const Duration(minutes: 10)),
       ),
     ];
   }
 
   @override
-  Future<ChatMessage> askCoachQuestion(String question) async {
+  Future<ChatMessage> askCoachQuestion(String question, {String? subjectId, String? topicId}) async {
     await Future.delayed(const Duration(milliseconds: 300));
     final q = question.toLowerCase();
 
@@ -68,5 +68,72 @@ class MockAiCoachRepository implements AiCoachRepository {
       text: reply,
       timestamp: DateTime.now(),
     );
+  }
+
+  @override
+  Future<Map<String, dynamic>> explainConcept(
+    String conceptName, {
+    String? subjectId,
+    String? topicId,
+    String? difficultyLevel,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 200));
+    return {
+      'concept_name': conceptName,
+      'summary': '$conceptName is a foundational principle in structured problem solving.',
+      'key_points': [
+        'Core definition and governing equations',
+        'Practical implementation constraints',
+        'Common edge cases in real-world application',
+      ],
+      'analogy': 'Like building blocks that form a resilient bridge.',
+      'practice_question': 'How does doubling the initial input alter the steady-state output?',
+      'recommended_duration_minutes': 15,
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> evaluateIntervention({
+    required String subjectTitle,
+    required String topicTitle,
+    required int elapsedMinutes,
+    required int distractionsCount,
+    required String triggerReason,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 150));
+    return {
+      'should_intervene': true,
+      'intervention_title': 'Focus Realignment',
+      'intervention_message': 'You have studied for $elapsedMinutes minutes. Take a 30-second breath and refocus on $topicTitle.',
+      'suggested_action': 'micro_stretch',
+      'cooldown_seconds': 30,
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> analyzeSession({
+    required String sessionId,
+    required String subjectTitle,
+    required String topicTitle,
+    required int actualDurationMinutes,
+    required int targetDurationMinutes,
+    required int focusScore,
+    required int distractionsCount,
+    required String reflection,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 250));
+    return {
+      'session_id': sessionId,
+      'overall_feedback': 'Strong focus throughout the $actualDurationMinutes-minute session on $topicTitle.',
+      'focus_rating': focusScore >= 85 ? 'Strong' : 'Moderate',
+      'what_went_well': [
+        'Maintained active attention for $actualDurationMinutes minutes.',
+        'Completed targeted focus interval with minimal interruptions.',
+      ],
+      'areas_for_growth': [
+        'Recorded $distractionsCount distraction instances — try clearing desk space next session.',
+      ],
+      'recommended_next_action': 'Write 3 self-quiz questions to lock in today’s progress.',
+    };
   }
 }

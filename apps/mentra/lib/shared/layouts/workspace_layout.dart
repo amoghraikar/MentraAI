@@ -3,7 +3,7 @@ import '../../core/network/api_client.dart';
 import '../../core/routing/app_route.dart';
 import '../../core/routing/app_router.dart';
 import '../../core/theme/app_spacing.dart';
-import '../../features/ai_coach/data/repositories/mock_ai_coach_repository.dart';
+import '../../features/ai_coach/data/repositories/api_ai_coach_repository.dart';
 import '../../features/ai_coach/domain/repositories/ai_coach_repository.dart';
 import '../../features/ai_coach/presentation/ai_coach_page.dart';
 import '../../features/analytics/data/repositories/api_analytics_repository.dart';
@@ -87,7 +87,7 @@ class _WorkspaceLayoutState extends State<WorkspaceLayout> {
     _goalRepo = widget.goalRepository ?? ApiGoalRepository(apiClient: apiClient);
     _sessionRepo = widget.sessionRepository ?? ApiSessionRepository(apiClient: apiClient);
     _analyticsRepo = widget.analyticsRepository ?? ApiAnalyticsRepository(apiClient: apiClient);
-    _aiCoachRepo = widget.aiCoachRepository ?? MockAiCoachRepository();
+    _aiCoachRepo = widget.aiCoachRepository ?? ApiAiCoachRepository(apiClient: apiClient);
 
     _sessionController = SessionController(sessionRepository: _sessionRepo);
     _sessionController.addListener(_onSessionStateChange);
@@ -134,6 +134,7 @@ class _WorkspaceLayoutState extends State<WorkspaceLayout> {
       case SessionState.completed:
         return SessionSummaryPage(
           sessionController: _sessionController,
+          aiCoachRepository: _aiCoachRepo,
           onDone: () {
             _sessionController.cancelSession();
             NavigationScope.of(context).setRoute(AppRoute.home);

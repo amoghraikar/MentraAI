@@ -4,6 +4,7 @@ from app.models.topic import Topic
 from app.models.note import Note
 from app.models.goal import Goal, GoalMilestone
 from app.models.study_session import StudySession
+from app.models.ai_coach import CoachMessage, CoachInsight
 
 __all__ = [
     "User",
@@ -13,4 +14,6 @@ __all__ = [
     "Goal",
     "GoalMilestone",
     "StudySession",
+    "CoachMessage",
+    "CoachInsight",
 ]

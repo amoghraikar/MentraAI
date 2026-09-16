@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
@@ -6,6 +7,7 @@ import '../../../shared/widgets/mentra_badge.dart';
 import '../../../shared/widgets/mentra_button.dart';
 import '../../../shared/widgets/mentra_card.dart';
 import '../../../shared/widgets/mentra_stat_card.dart';
+import '../../ai_coach/domain/repositories/ai_coach_repository.dart';
 import '../domain/models/study_session_record.dart';
 import 'session_controller.dart';
 
@@ -14,10 +16,12 @@ class SessionSummaryPage extends StatefulWidget {
     super.key,
     required this.sessionController,
     required this.onDone,
+    this.aiCoachRepository,
   });
 
   final SessionController sessionController;
   final VoidCallback onDone;
+  final AiCoachRepository? aiCoachRepository;
 
   @override
   State<SessionSummaryPage> createState() => _SessionSummaryPageState();
@@ -25,6 +29,48 @@ class SessionSummaryPage extends StatefulWidget {
 
 class _SessionSummaryPageState extends State<SessionSummaryPage> {
   bool _isSaving = false;
+  Map<String, dynamic>? _aiAnalysis;
+  bool _isLoadingAiAnalysis = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAiAnalysis();
+  }
+
+  Future<void> _loadAiAnalysis() async {
+    final repo = widget.aiCoachRepository;
+    final config = widget.sessionController.currentConfig;
+    final durationMins = (widget.sessionController.elapsedSeconds / 60).ceil();
+
+    if (repo != null) {
+      try {
+        final analysis = await repo.analyzeSession(
+          sessionId: 'sess_${DateTime.now().millisecondsSinceEpoch}',
+          subjectTitle: config?.subjectTitle ?? 'General Subject',
+          topicTitle: config?.topicTitle ?? 'General Topic',
+          actualDurationMinutes: durationMins,
+          targetDurationMinutes: config?.targetDurationMinutes ?? 45,
+          focusScore: widget.sessionController.focusScore,
+          distractionsCount: widget.sessionController.distractionsCount,
+          reflection: widget.sessionController.selectedReflection.name,
+        );
+        if (mounted) {
+          setState(() {
+            _aiAnalysis = analysis;
+            _isLoadingAiAnalysis = false;
+          });
+        }
+        return;
+      } catch (_) {
+        // Fallback safely
+      }
+    }
+
+    if (mounted) {
+      setState(() => _isLoadingAiAnalysis = false);
+    }
+  }
 
   void _handleSave() async {
     setState(() => _isSaving = true);
@@ -37,6 +83,7 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final config = widget.sessionController.currentConfig;
     final durationMins = (widget.sessionController.elapsedSeconds / 60).ceil();
     final focusScore = widget.sessionController.focusScore;
@@ -47,7 +94,7 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppSpacing.xl),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
+            constraints: const BoxConstraints(maxWidth: 540),
             child: MentraCard(
               padding: const EdgeInsets.all(AppSpacing.xl),
               child: Column(
@@ -121,6 +168,84 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
                         ),
                       ),
                     ],
+                  ),
+
+                  const SizedBox(height: AppSpacing.xl),
+
+                  // AI Coach Session Feedback Box
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF9F9F8),
+                      borderRadius: AppRadius.borderMd,
+                      border: Border.all(color: theme.dividerColor),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.psychology_outlined, size: 18, color: AppColors.accent),
+                                const SizedBox(width: AppSpacing.xs),
+                                Text(
+                                  'AI Coach Reflection',
+                                  style: AppTypography.labelSmall.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (_aiAnalysis != null)
+                              MentraBadge(
+                                label: _aiAnalysis!['focus_rating'] as String? ?? 'Strong',
+                                variant: MentraBadgeVariant.primary,
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        if (_isLoadingAiAnalysis)
+                          Text(
+                            'Synthesizing session focus feedback...',
+                            style: AppTypography.bodySmall.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          )
+                        else ...[
+                          Text(
+                            _aiAnalysis?['overall_feedback'] as String? ??
+                                'Solid study session with consistent pacing. You maintained strong focus across the main interval.',
+                            style: AppTypography.bodySmall.copyWith(
+                              color: theme.colorScheme.onSurface,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          if (_aiAnalysis?['recommended_next_action'] != null)
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.arrow_forward_rounded, size: 14, color: AppColors.success),
+                                const SizedBox(width: AppSpacing.xs),
+                                Expanded(
+                                  child: Text(
+                                    'Next: ${_aiAnalysis!['recommended_next_action']}',
+                                    style: AppTypography.bodySmall.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                      color: AppColors.success,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ],
+                    ),
                   ),
 
                   const SizedBox(height: AppSpacing.xl),

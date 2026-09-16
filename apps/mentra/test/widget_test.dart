@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mentra/core/network/api_client.dart';
+import 'package:mentra/features/ai_coach/data/repositories/mock_ai_coach_repository.dart';
 import 'package:mentra/features/analytics/data/repositories/mock_analytics_repository.dart';
 import 'package:mentra/features/auth/services/auth_service.dart';
 import 'package:mentra/features/auth/services/token_storage_service.dart';
@@ -108,6 +109,7 @@ void main() {
       goalRepository: MockGoalRepository(),
       sessionRepository: MockSessionRepository(),
       analyticsRepository: MockAnalyticsRepository(),
+      aiCoachRepository: MockAiCoachRepository(),
     ));
     await tester.pumpAndSettle();
 
@@ -231,6 +233,7 @@ void main() {
       goalRepository: MockGoalRepository(),
       sessionRepository: MockSessionRepository(),
       analyticsRepository: MockAnalyticsRepository(),
+      aiCoachRepository: MockAiCoachRepository(),
     ));
     await tester.pumpAndSettle();
 

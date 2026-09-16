@@ -27,8 +27,10 @@ class _AiCoachPageState extends State<AiCoachPage> {
   List<CoachInsightModel> _insights = [];
   List<ChatMessage> _messages = [];
   final TextEditingController _queryController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   bool _isLoading = true;
   bool _isSending = false;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -39,25 +41,42 @@ class _AiCoachPageState extends State<AiCoachPage> {
   @override
   void dispose() {
     _queryController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   Future<void> _loadCoachData() async {
-    final insights = await widget.aiCoachRepository.getCoachInsights();
-    final chat = await widget.aiCoachRepository.getInitialChatHistory();
-    if (!mounted) return;
     setState(() {
-      _insights = insights;
-      _messages = chat;
-      _isLoading = false;
+      _isLoading = true;
+      _errorMessage = null;
     });
+
+    try {
+      final insights = await widget.aiCoachRepository.getCoachInsights();
+      final chat = await widget.aiCoachRepository.getInitialChatHistory();
+      if (!mounted) return;
+      setState(() {
+        _insights = insights;
+        _messages = chat;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Unable to load coaching data. Tap retry to reload.';
+        _isLoading = false;
+      });
+    }
   }
 
-  Future<void> _sendQuestion() async {
-    final text = _queryController.text.trim();
+  Future<void> _sendQuestion([String? promptText]) async {
+    final text = (promptText ?? _queryController.text).trim();
     if (text.isEmpty || _isSending) return;
 
-    _queryController.clear();
+    if (promptText == null) {
+      _queryController.clear();
+    }
+
     final userMsg = ChatMessage(
       id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
       sender: 'user',
@@ -70,11 +89,42 @@ class _AiCoachPageState extends State<AiCoachPage> {
       _isSending = true;
     });
 
-    final reply = await widget.aiCoachRepository.askCoachQuestion(text);
-    if (!mounted) return;
-    setState(() {
-      _messages.add(reply);
-      _isSending = false;
+    _scrollToBottom();
+
+    try {
+      final reply = await widget.aiCoachRepository.askCoachQuestion(text);
+      if (!mounted) return;
+      setState(() {
+        _messages.add(reply);
+        _isSending = false;
+      });
+      _scrollToBottom();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          ChatMessage(
+            id: 'err_${DateTime.now().millisecondsSinceEpoch}',
+            sender: 'coach',
+            text: 'I am temporarily unable to reach the coaching engine. Using local focus heuristics.',
+            timestamp: DateTime.now(),
+          ),
+        );
+        _isSending = false;
+      });
+      _scrollToBottom();
+    }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
@@ -84,7 +134,29 @@ class _AiCoachPageState extends State<AiCoachPage> {
     final isDark = theme.brightness == Brightness.dark;
 
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(AppSpacing.xxl),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_errorMessage!, style: AppTypography.bodyMedium),
+            const SizedBox(height: AppSpacing.md),
+            MentraButton(
+              label: 'Retry',
+              icon: Icons.refresh_rounded,
+              onPressed: _loadCoachData,
+            ),
+          ],
+        ),
+      );
     }
 
     return Column(
@@ -123,7 +195,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      'I analyzed your 18 completed study blocks. Your peak attention occurs in morning blocks of 45 minutes.',
+                      'I analyzed your completed study history. Your peak focus retention occurs during 45-minute morning sessions.',
                       style: AppTypography.bodySmall.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -140,7 +212,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
         // Behavioral Insights Cards
         MentraSection(
           title: 'Focus Patterns & Recommendations',
-          subtitle: 'Synthesized observations derived from your study history',
+          subtitle: 'Synthesized observations derived from your study telemetry',
           child: Column(
             children: _insights.map((insight) {
               return Padding(
@@ -214,11 +286,28 @@ class _AiCoachPageState extends State<AiCoachPage> {
           child: MentraCard(
             padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Quick Suggestion Chips
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildPromptChip('Optimal study interval?'),
+                      const SizedBox(width: AppSpacing.xs),
+                      _buildPromptChip('Active recall strategy'),
+                      const SizedBox(width: AppSpacing.xs),
+                      _buildPromptChip('How to eliminate phone distraction?'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+
                 // Message History List
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 220),
+                  constraints: const BoxConstraints(maxHeight: 260),
                   child: ListView.builder(
+                    controller: _scrollController,
                     shrinkWrap: true,
                     itemCount: _messages.length,
                     itemBuilder: (context, index) {
@@ -293,6 +382,18 @@ class _AiCoachPageState extends State<AiCoachPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPromptChip(String label) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return ActionChip(
+      label: Text(label, style: AppTypography.labelSmall.copyWith(fontSize: 11)),
+      backgroundColor: isDark ? const Color(0xFF222222) : const Color(0xFFEFEFEF),
+      side: BorderSide(color: theme.dividerColor),
+      onPressed: () => _sendQuestion(label),
     );
   }
 }
