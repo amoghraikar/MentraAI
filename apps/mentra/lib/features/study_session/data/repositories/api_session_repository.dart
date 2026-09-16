@@ -3,9 +3,9 @@ import '../../domain/models/study_session_record.dart';
 import '../../domain/repositories/session_repository.dart';
 
 class ApiSessionRepository implements SessionRepository {
-  ApiSessionRepository({required ApiClient apiClient}) : _apiClient = apiClient;
+  ApiSessionRepository({required this.apiClient});
 
-  final ApiClient _apiClient;
+  final ApiClient apiClient;
   String? _cachedDefaultSubjectId;
 
   Future<String> _getDefaultSubjectId() async {
@@ -13,7 +13,7 @@ class ApiSessionRepository implements SessionRepository {
       return _cachedDefaultSubjectId!;
     }
     try {
-      final res = await _apiClient.get('/api/v1/subjects');
+      final res = await apiClient.get('/api/v1/subjects');
       final list = res as List<dynamic>;
       if (list.isNotEmpty) {
         _cachedDefaultSubjectId = list.first['id'] as String;
@@ -22,7 +22,7 @@ class ApiSessionRepository implements SessionRepository {
     } catch (_) {}
 
     try {
-      final newSub = await _apiClient.post(
+      final newSub = await apiClient.post(
         '/api/v1/subjects',
         body: {
           'title': 'General Study',
@@ -42,7 +42,7 @@ class ApiSessionRepository implements SessionRepository {
 
   @override
   Future<List<StudySessionRecord>> getRecentSessions({int limit = 10}) async {
-    final response = await _apiClient.get(
+    final response = await apiClient.get(
       '/api/v1/sessions',
       queryParams: {'limit': limit.toString()},
     );
@@ -52,14 +52,18 @@ class ApiSessionRepository implements SessionRepository {
 
   @override
   Future<StudySessionRecord> saveSession(StudySessionRecord session) async {
-    final subjectId = await _getDefaultSubjectId();
+    final effectiveSubjectId = (session.subjectId != null && session.subjectId!.isNotEmpty && session.subjectId != 'default')
+        ? session.subjectId!
+        : await _getDefaultSubjectId();
     final now = session.completedAt.toUtc();
     final started = now.subtract(Duration(minutes: session.durationMinutes));
 
-    final response = await _apiClient.post(
+    final response = await apiClient.post(
       '/api/v1/sessions',
       body: {
-        'subject_id': subjectId,
+        'subject_id': effectiveSubjectId,
+        if (session.topicId != null && session.topicId!.isNotEmpty && session.topicId != 'gen_top')
+          'topic_id': session.topicId,
         'target_duration_minutes': session.durationMinutes > 0 ? session.durationMinutes : 45,
         'actual_duration_minutes': session.durationMinutes,
         'study_mode': 'Focus Mode',
@@ -75,6 +79,8 @@ class ApiSessionRepository implements SessionRepository {
     final saved = _sessionFromJson(response as Map<String, dynamic>);
     return StudySessionRecord(
       id: saved.id,
+      subjectId: effectiveSubjectId,
+      topicId: session.topicId,
       subjectTitle: session.subjectTitle,
       topicTitle: session.topicTitle,
       durationMinutes: saved.durationMinutes,
@@ -123,6 +129,8 @@ class ApiSessionRepository implements SessionRepository {
 
     return StudySessionRecord(
       id: json['id'] as String,
+      subjectId: json['subject_id'] as String?,
+      topicId: json['topic_id'] as String?,
       subjectTitle: json['subject_title'] as String? ?? 'Subject',
       topicTitle: json['topic_title'] as String? ?? 'Topic',
       durationMinutes: (json['actual_duration_minutes'] as num?)?.toInt() ?? 0,

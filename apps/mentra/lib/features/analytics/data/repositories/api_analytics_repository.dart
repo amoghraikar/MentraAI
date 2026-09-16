@@ -3,13 +3,13 @@ import '../../domain/models/analytics_data.dart';
 import '../../domain/repositories/analytics_repository.dart';
 
 class ApiAnalyticsRepository implements AnalyticsRepository {
-  ApiAnalyticsRepository({required ApiClient apiClient}) : _apiClient = apiClient;
+  ApiAnalyticsRepository({required this.apiClient});
 
-  final ApiClient _apiClient;
+  final ApiClient apiClient;
 
   @override
   Future<AnalyticsSummaryModel> getAnalyticsSummary() async {
-    final response = await _apiClient.get(
+    final response = await apiClient.get(
       '/api/v1/sessions',
       queryParams: {'limit': '50'},
     );

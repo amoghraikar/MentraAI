@@ -8,6 +8,8 @@ enum SessionReflection {
 class StudySessionRecord {
   const StudySessionRecord({
     required this.id,
+    this.subjectId,
+    this.topicId,
     required this.subjectTitle,
     required this.topicTitle,
     required this.durationMinutes,
@@ -18,6 +20,8 @@ class StudySessionRecord {
   });
 
   final String id;
+  final String? subjectId;
+  final String? topicId;
   final String subjectTitle;
   final String topicTitle;
   final int durationMinutes;

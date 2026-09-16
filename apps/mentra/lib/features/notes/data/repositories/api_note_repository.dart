@@ -3,9 +3,9 @@ import '../../domain/models/note_model.dart';
 import '../../domain/repositories/note_repository.dart';
 
 class ApiNoteRepository implements NoteRepository {
-  ApiNoteRepository({required ApiClient apiClient}) : _apiClient = apiClient;
+  ApiNoteRepository({required this.apiClient});
 
-  final ApiClient _apiClient;
+  final ApiClient apiClient;
 
   @override
   Future<List<NoteModel>> getNotes({String? searchQuery, String? subjectId}) async {
@@ -14,7 +14,7 @@ class ApiNoteRepository implements NoteRepository {
       queryParams['subject_id'] = subjectId;
     }
 
-    final response = await _apiClient.get('/api/v1/notes', queryParams: queryParams);
+    final response = await apiClient.get('/api/v1/notes', queryParams: queryParams);
     final list = response as List<dynamic>;
     var notes = list.map((json) => _noteFromJson(json as Map<String, dynamic>)).toList();
 
@@ -33,7 +33,7 @@ class ApiNoteRepository implements NoteRepository {
   @override
   Future<NoteModel?> getNoteById(String id) async {
     try {
-      final response = await _apiClient.get('/api/v1/notes/$id');
+      final response = await apiClient.get('/api/v1/notes/$id');
       return _noteFromJson(response as Map<String, dynamic>);
     } on ApiException catch (e) {
       if (e.statusCode == 404) return null;
@@ -49,7 +49,7 @@ class ApiNoteRepository implements NoteRepository {
     String content = '',
     List<String> tags = const [],
   }) async {
-    final response = await _apiClient.post(
+    final response = await apiClient.post(
       '/api/v1/notes',
       body: {
         'subject_id': subjectId,
@@ -64,7 +64,7 @@ class ApiNoteRepository implements NoteRepository {
 
   @override
   Future<NoteModel> updateNote(NoteModel note) async {
-    final response = await _apiClient.put(
+    final response = await apiClient.put(
       '/api/v1/notes/${note.id}',
       body: {
         'title': note.title,
@@ -79,7 +79,7 @@ class ApiNoteRepository implements NoteRepository {
 
   @override
   Future<void> deleteNote(String id) async {
-    await _apiClient.delete('/api/v1/notes/$id');
+    await apiClient.delete('/api/v1/notes/$id');
   }
 
   NoteModel _noteFromJson(Map<String, dynamic> json) {

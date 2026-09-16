@@ -22,27 +22,25 @@ class ApiClient {
   ApiClient({
     String? baseUrl,
     http.Client? httpClient,
-    Future<String?> Function()? tokenProvider,
-    Duration timeout = const Duration(seconds: 15),
+    this.tokenProvider,
+    this.timeout = const Duration(seconds: 15),
   })  : baseUrl = baseUrl ??
             const String.fromEnvironment(
               'MENTRA_API_URL',
               defaultValue: 'http://127.0.0.1:8000',
             ),
-        _httpClient = httpClient ?? http.Client(),
-        _tokenProvider = tokenProvider,
-        _timeout = timeout;
+        _httpClient = httpClient ?? http.Client();
 
   final String baseUrl;
   final http.Client _httpClient;
-  final Future<String?> Function()? _tokenProvider;
-  final Duration _timeout;
+  final Future<String?> Function()? tokenProvider;
+  final Duration timeout;
 
   Future<String?> _resolveToken(String? explicitToken) async {
     if (explicitToken != null && explicitToken.isNotEmpty) {
       return explicitToken;
     }
-    final provider = _tokenProvider;
+    final provider = tokenProvider;
     if (provider != null) {
       return await provider();
     }
@@ -118,7 +116,7 @@ class ApiClient {
 
   Future<dynamic> _sendRequest(Future<http.Response> Function() requestFn) async {
     try {
-      final response = await requestFn().timeout(_timeout);
+      final response = await requestFn().timeout(timeout);
       return _handleResponse(response);
     } on TimeoutException {
       throw const ApiException(

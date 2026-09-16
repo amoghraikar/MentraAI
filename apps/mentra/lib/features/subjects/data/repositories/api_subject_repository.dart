@@ -4,13 +4,13 @@ import '../../domain/models/topic_model.dart';
 import '../../domain/repositories/subject_repository.dart';
 
 class ApiSubjectRepository implements SubjectRepository {
-  ApiSubjectRepository({required ApiClient apiClient}) : _apiClient = apiClient;
+  ApiSubjectRepository({required this.apiClient});
 
-  final ApiClient _apiClient;
+  final ApiClient apiClient;
 
   @override
   Future<List<SubjectModel>> getSubjects() async {
-    final response = await _apiClient.get('/api/v1/subjects');
+    final response = await apiClient.get('/api/v1/subjects');
     final list = response as List<dynamic>;
     return list.map((json) => _subjectFromJson(json as Map<String, dynamic>)).toList();
   }
@@ -18,7 +18,7 @@ class ApiSubjectRepository implements SubjectRepository {
   @override
   Future<SubjectModel?> getSubjectById(String id) async {
     try {
-      final response = await _apiClient.get('/api/v1/subjects/$id');
+      final response = await apiClient.get('/api/v1/subjects/$id');
       return _subjectFromJson(response as Map<String, dynamic>);
     } on ApiException catch (e) {
       if (e.statusCode == 404) return null;
@@ -33,7 +33,7 @@ class ApiSubjectRepository implements SubjectRepository {
     required String description,
     required String colorHex,
   }) async {
-    final response = await _apiClient.post(
+    final response = await apiClient.post(
       '/api/v1/subjects',
       body: {
         'title': title,
@@ -49,7 +49,7 @@ class ApiSubjectRepository implements SubjectRepository {
 
   @override
   Future<SubjectModel> updateSubject(SubjectModel subject) async {
-    final response = await _apiClient.put(
+    final response = await apiClient.put(
       '/api/v1/subjects/${subject.id}',
       body: {
         'title': subject.title,
@@ -66,7 +66,7 @@ class ApiSubjectRepository implements SubjectRepository {
 
   @override
   Future<void> deleteSubject(String id) async {
-    await _apiClient.delete('/api/v1/subjects/$id');
+    await apiClient.delete('/api/v1/subjects/$id');
   }
 
   @override
@@ -76,7 +76,7 @@ class ApiSubjectRepository implements SubjectRepository {
     required String description,
     List<String> keyConcepts = const [],
   }) async {
-    final response = await _apiClient.post(
+    final response = await apiClient.post(
       '/api/v1/topics',
       body: {
         'subject_id': subjectId,
@@ -94,7 +94,7 @@ class ApiSubjectRepository implements SubjectRepository {
 
   @override
   Future<TopicModel> updateTopic(TopicModel topic) async {
-    final response = await _apiClient.put(
+    final response = await apiClient.put(
       '/api/v1/topics/${topic.id}',
       body: {
         'title': topic.title,
@@ -111,7 +111,7 @@ class ApiSubjectRepository implements SubjectRepository {
 
   @override
   Future<void> deleteTopic(String subjectId, String topicId) async {
-    await _apiClient.delete('/api/v1/topics/$topicId');
+    await apiClient.delete('/api/v1/topics/$topicId');
   }
 
   SubjectModel _subjectFromJson(Map<String, dynamic> json) {

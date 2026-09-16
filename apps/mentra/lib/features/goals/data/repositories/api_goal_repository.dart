@@ -3,9 +3,9 @@ import '../../domain/models/goal_model.dart';
 import '../../domain/repositories/goal_repository.dart';
 
 class ApiGoalRepository implements GoalRepository {
-  ApiGoalRepository({required ApiClient apiClient}) : _apiClient = apiClient;
+  ApiGoalRepository({required this.apiClient});
 
-  final ApiClient _apiClient;
+  final ApiClient apiClient;
   String? _cachedDefaultSubjectId;
 
   Future<String> _getDefaultSubjectId() async {
@@ -13,7 +13,7 @@ class ApiGoalRepository implements GoalRepository {
       return _cachedDefaultSubjectId!;
     }
     try {
-      final res = await _apiClient.get('/api/v1/subjects');
+      final res = await apiClient.get('/api/v1/subjects');
       final list = res as List<dynamic>;
       if (list.isNotEmpty) {
         _cachedDefaultSubjectId = list.first['id'] as String;
@@ -23,7 +23,7 @@ class ApiGoalRepository implements GoalRepository {
 
     // Create a default General Study subject if none exists
     try {
-      final newSub = await _apiClient.post(
+      final newSub = await apiClient.post(
         '/api/v1/subjects',
         body: {
           'title': 'General Study',
@@ -43,7 +43,7 @@ class ApiGoalRepository implements GoalRepository {
 
   @override
   Future<List<GoalModel>> getGoals() async {
-    final response = await _apiClient.get('/api/v1/goals');
+    final response = await apiClient.get('/api/v1/goals');
     final list = response as List<dynamic>;
     return list.map((json) => _goalFromJson(json as Map<String, dynamic>)).toList();
   }
@@ -60,7 +60,7 @@ class ApiGoalRepository implements GoalRepository {
         .map((m) => {'title': m, 'is_completed': false})
         .toList();
 
-    final response = await _apiClient.post(
+    final response = await apiClient.post(
       '/api/v1/goals',
       body: {
         'subject_id': subjectId,
@@ -76,7 +76,7 @@ class ApiGoalRepository implements GoalRepository {
 
   @override
   Future<GoalModel> updateGoal(GoalModel goal) async {
-    final response = await _apiClient.put(
+    final response = await apiClient.put(
       '/api/v1/goals/${goal.id}',
       body: {
         'title': goal.title,
@@ -93,14 +93,14 @@ class ApiGoalRepository implements GoalRepository {
 
   @override
   Future<GoalModel> toggleMilestone(String goalId, String milestoneId) async {
-    await _apiClient.post('/api/v1/goals/$goalId/milestones/$milestoneId/toggle');
-    final response = await _apiClient.get('/api/v1/goals/$goalId');
+    await apiClient.post('/api/v1/goals/$goalId/milestones/$milestoneId/toggle');
+    final response = await apiClient.get('/api/v1/goals/$goalId');
     return _goalFromJson(response as Map<String, dynamic>);
   }
 
   @override
   Future<void> deleteGoal(String id) async {
-    await _apiClient.delete('/api/v1/goals/$id');
+    await apiClient.delete('/api/v1/goals/$id');
   }
 
   GoalModel _goalFromJson(Map<String, dynamic> json) {
