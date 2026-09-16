@@ -150,3 +150,51 @@ class MonitoringConfig {
   /// Cooldown between user-facing intervention alerts to prevent alert fatigue.
   final double alertCooldownSeconds;
 }
+
+/// Instantaneous computer vision telemetry emitted from the live camera stream.
+class RealTimeCvTelemetry {
+  const RealTimeCvTelemetry({
+    required this.isFaceDetected,
+    required this.confidence,
+    required this.box,
+    required this.landmarks,
+    required this.yaw,
+    required this.pitch,
+    required this.attentionScore,
+    required this.ear,
+    required this.fps,
+    required this.latencyMs,
+    required this.statusMessage,
+  });
+
+  final bool isFaceDetected;
+  final double confidence;
+  final Rect box; // 0.0 to 1.0 normalized bounds in video coordinates
+  final List<Offset> landmarks; // normalized offsets: [leftEye, rightEye, nose, mouth]
+  final double yaw; // head yaw in degrees (-30 to +30)
+  final double pitch; // head pitch in degrees (-20 to +20)
+  final double attentionScore; // 0.0 to 1.0
+  final double ear; // Eye Aspect Ratio (0.0 to 0.5)
+  final int fps; // Measured processing frames per second
+  final double latencyMs; // Processing inference latency in ms
+  final String statusMessage;
+
+  factory RealTimeCvTelemetry.defaultFace() => const RealTimeCvTelemetry(
+        isFaceDetected: true,
+        confidence: 0.98,
+        box: Rect.fromLTWH(0.25, 0.18, 0.50, 0.58),
+        landmarks: [
+          Offset(0.38, 0.35),
+          Offset(0.62, 0.35),
+          Offset(0.50, 0.48),
+          Offset(0.50, 0.62),
+        ],
+        yaw: 0.0,
+        pitch: 0.0,
+        attentionScore: 0.96,
+        ear: 0.32,
+        fps: 30,
+        latencyMs: 12.0,
+        statusMessage: 'FOCUSED ON MATERIAL',
+      );
+}

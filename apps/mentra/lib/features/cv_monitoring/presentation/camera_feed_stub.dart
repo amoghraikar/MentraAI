@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import '../domain/models/monitoring_models.dart';
 
-/// Camera feed widget stub for non-web / testing environments
-Widget buildPlatformCameraView({required String viewId, required bool isMirrored}) {
+/// Stub camera feed widget for non-web / testing environments
+Widget buildPlatformCameraView({
+  required String viewId,
+  required bool isMirrored,
+  void Function(RealTimeCvTelemetry telemetry)? onTelemetry,
+}) {
   return Container(
     color: const Color(0xFF101418),
     child: Center(

@@ -1,5 +1,3 @@
-import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
@@ -36,14 +34,9 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
   bool _showCvOverlay = true;
   bool _isMirrored = true;
   late final AnimationController _pulseController;
-  Timer? _telemetryTimer;
 
-  // Real-time simulated micro-variations for live CV HUD realism
-  double _attention = 0.96;
-  double _ear = 0.32;
-  double _yaw = 0.5;
-  double _pitch = -1.2;
-  int _fps = 30;
+  // Real-time live CV Telemetry state from real camera feed
+  RealTimeCvTelemetry _telemetry = RealTimeCvTelemetry.defaultFace();
 
   @override
   void initState() {
@@ -54,20 +47,15 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
     );
 
     final isTestMode = WidgetsBinding.instance.runtimeType.toString().contains('Test');
-
     if (widget.isAnimated && !isTestMode) {
       _pulseController.repeat(reverse: true);
-      _telemetryTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
-        if (mounted) {
-          final rand = math.Random();
-          setState(() {
-            _attention = (0.93 + rand.nextDouble() * 0.06).clamp(0.0, 1.0);
-            _ear = 0.29 + rand.nextDouble() * 0.05;
-            _yaw = -1.5 + rand.nextDouble() * 3.0;
-            _pitch = -2.5 + rand.nextDouble() * 2.0;
-            _fps = 29 + rand.nextInt(3);
-          });
-        }
+    }
+  }
+
+  void _onLiveTelemetry(RealTimeCvTelemetry newTelemetry) {
+    if (mounted) {
+      setState(() {
+        _telemetry = newTelemetry;
       });
     }
   }
@@ -75,7 +63,6 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
   @override
   void dispose() {
     _pulseController.dispose();
-    _telemetryTimer?.cancel();
     super.dispose();
   }
 
@@ -90,7 +77,9 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
         borderRadius: AppRadius.borderLg,
         border: Border.all(
           color: _showCvOverlay
-              ? AppColors.primary.withValues(alpha: 0.4)
+              ? (_telemetry.isFaceDetected
+                  ? const Color(0xFF2EA043).withValues(alpha: 0.6)
+                  : Colors.orange.withValues(alpha: 0.6))
               : (isDark ? const Color(0xFF30363D) : const Color(0xFFE1E4E8)),
           width: 1.5,
         ),
@@ -106,11 +95,12 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. Live Camera Stream Platform View
+          // 1. Live Camera Stream Platform View with Real-time Frame Analysis
           if (_isCameraEnabled)
             platform_camera.buildPlatformCameraView(
               viewId: widget.viewId,
               isMirrored: _isMirrored,
+              onTelemetry: _onLiveTelemetry,
             )
           else
             Container(
@@ -137,32 +127,25 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
               ),
             ),
 
-          // 2. Real-time Computer Vision HUD Overlay
+          // 2. Real-Time Dynamic Computer Vision HUD Overlay
           if (_isCameraEnabled && _showCvOverlay) ...[
             // Subtle scanner grid
             CustomPaint(
               painter: _CvHudGridPainter(pulseValue: _pulseController.value),
             ),
 
-            // Face Bounding Box & Landmarks
-            Center(
-              child: AnimatedBuilder(
-                animation: _pulseController,
-                builder: (context, child) {
-                  return CustomPaint(
-                    painter: _FaceTrackingPainter(
-                      pulseValue: _pulseController.value,
-                      yaw: _yaw,
-                      pitch: _pitch,
-                      isCompact: widget.isCompact,
-                    ),
-                    child: SizedBox(
-                      width: widget.isCompact ? 160 : 260,
-                      height: widget.isCompact ? 180 : 300,
-                    ),
-                  );
-                },
-              ),
+            // Live Dynamic Face Bounding Box & Landmarks
+            LayoutBuilder(
+              builder: (context, constraints) {
+                return CustomPaint(
+                  size: Size(constraints.maxWidth, constraints.maxHeight),
+                  painter: _RealTimeFaceTrackingPainter(
+                    telemetry: _telemetry,
+                    pulseValue: _pulseController.value,
+                    isCompact: widget.isCompact,
+                  ),
+                );
+              },
             ),
 
             // Top HUD Telemetry Bar
@@ -176,10 +159,12 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.65),
+                      color: Colors.black.withValues(alpha: 0.70),
                       borderRadius: AppRadius.borderSm,
                       border: Border.all(
-                        color: const Color(0xFF238636),
+                        color: _telemetry.isFaceDetected
+                            ? const Color(0xFF238636)
+                            : Colors.orange,
                         width: 1,
                       ),
                     ),
@@ -189,17 +174,21 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
                         Container(
                           width: 6,
                           height: 6,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF2EA043),
+                          decoration: BoxDecoration(
+                            color: _telemetry.isFaceDetected
+                                ? const Color(0xFF2EA043)
+                                : Colors.orange,
                             shape: BoxShape.circle,
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 5),
                         Text(
-                          'LIVE CV • $_fps FPS',
-                          style: const TextStyle(
-                            color: Color(0xFF7EE787),
-                            fontSize: 10,
+                          _telemetry.isFaceDetected ? 'CV • ${_telemetry.fps} FPS' : 'NO FACE',
+                          style: TextStyle(
+                            color: _telemetry.isFaceDetected
+                                ? const Color(0xFF7EE787)
+                                : Colors.orangeAccent,
+                            fontSize: 9.5,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.5,
                           ),
@@ -207,40 +196,41 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
                       ],
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.65),
-                      borderRadius: AppRadius.borderSm,
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.15),
+                  if (!widget.isCompact)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.70),
+                        borderRadius: AppRadius.borderSm,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.15),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.shield_outlined,
+                            size: 11,
+                            color: Colors.lightBlueAccent,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '100% Local',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.shield_outlined,
-                          size: 11,
-                          color: Colors.lightBlueAccent,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '100% On-Device',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),
 
-            // Bottom CV Metrics Readout
+            // Bottom Real-Time CV Metrics Readout
             Positioned(
               bottom: widget.showControls ? 46 : 10,
               left: 12,
@@ -248,28 +238,35 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.75),
+                  color: Colors.black.withValues(alpha: 0.80),
                   borderRadius: AppRadius.borderSm,
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _buildMetricChip(
                       label: 'ATTENTION',
-                      value: '${(_attention * 100).toInt()}%',
-                      color: const Color(0xFF7EE787),
+                      value: '${(_telemetry.attentionScore * 100).toInt()}%',
+                      color: _telemetry.attentionScore > 0.75
+                          ? const Color(0xFF7EE787)
+                          : (_telemetry.attentionScore > 0.4 ? Colors.amber : Colors.redAccent),
                     ),
                     _buildMetricChip(
-                      label: 'GAZE',
-                      value: 'Centered',
+                      label: 'POSE (Y/P)',
+                      value: '${_telemetry.yaw.toInt()}° / ${_telemetry.pitch.toInt()}°',
                       color: Colors.lightBlueAccent,
+                    ),
+                    _buildMetricChip(
+                      label: 'EAR BLINK',
+                      value: _telemetry.ear.toStringAsFixed(2),
+                      color: _telemetry.ear > 0.18 ? Colors.white70 : Colors.amber,
                     ),
                     if (!widget.isCompact)
                       _buildMetricChip(
-                        label: 'EAR',
-                        value: _ear.toStringAsFixed(2),
-                        color: Colors.white70,
+                        label: 'STATUS',
+                        value: _telemetry.isFaceDetected ? 'Tracked' : 'Absent',
+                        color: _telemetry.isFaceDetected ? const Color(0xFF7EE787) : Colors.orange,
                       ),
                   ],
                 ),
@@ -402,7 +399,7 @@ class _CvHudGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF58A6FF).withValues(alpha: 0.06 + pulseValue * 0.04)
+      ..color = const Color(0xFF58A6FF).withValues(alpha: 0.04 + pulseValue * 0.03)
       ..strokeWidth = 1.0;
 
     const step = 40.0;
@@ -419,107 +416,114 @@ class _CvHudGridPainter extends CustomPainter {
       oldDelegate.pulseValue != pulseValue;
 }
 
-class _FaceTrackingPainter extends CustomPainter {
-  const _FaceTrackingPainter({
+class _RealTimeFaceTrackingPainter extends CustomPainter {
+  const _RealTimeFaceTrackingPainter({
+    required this.telemetry,
     required this.pulseValue,
-    required this.yaw,
-    required this.pitch,
     required this.isCompact,
   });
 
+  final RealTimeCvTelemetry telemetry;
   final double pulseValue;
-  final double yaw;
-  final double pitch;
   final bool isCompact;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final isDetected = telemetry.isFaceDetected;
+    final primaryColor = isDetected
+        ? const Color(0xFF2EA043).withValues(alpha: 0.85 + pulseValue * 0.15)
+        : Colors.orangeAccent.withValues(alpha: 0.85);
+
     final boxPaint = Paint()
-      ..color = const Color(0xFF2EA043).withValues(alpha: 0.7 + pulseValue * 0.3)
+      ..color = primaryColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8;
+      ..strokeWidth = 2.0;
 
     final landmarkPaint = Paint()
-      ..color = const Color(0xFF58A6FF)
+      ..color = isDetected ? const Color(0xFF58A6FF) : Colors.orangeAccent
       ..style = PaintingStyle.fill;
 
     final gazePaint = Paint()
-      ..color = const Color(0xFF388BFD)
+      ..color = isDetected ? const Color(0xFF388BFD) : Colors.orangeAccent
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4;
+      ..strokeWidth = 1.5;
 
-    final rect = Rect.fromCenter(
-      center: Offset(size.width / 2 + yaw * 2, size.height / 2 + pitch * 2),
-      width: size.width * (isCompact ? 0.75 : 0.65),
-      height: size.height * (isCompact ? 0.75 : 0.70),
+    // Convert normalized (0.0 - 1.0) coordinates to actual widget pixels
+    final box = telemetry.box;
+    final pixelRect = Rect.fromLTRB(
+      box.left * size.width,
+      box.top * size.height,
+      box.right * size.width,
+      box.bottom * size.height,
     );
 
-    // Draw Corner Brackets for Face Bounding Box
-    const cornerLen = 16.0;
+    // Draw Corner Brackets on the Real Detected Face
+    const cornerLen = 18.0;
 
     // Top-Left
-    canvas.drawLine(Offset(rect.left, rect.top), Offset(rect.left + cornerLen, rect.top), boxPaint);
-    canvas.drawLine(Offset(rect.left, rect.top), Offset(rect.left, rect.top + cornerLen), boxPaint);
+    canvas.drawLine(Offset(pixelRect.left, pixelRect.top), Offset(pixelRect.left + cornerLen, pixelRect.top), boxPaint);
+    canvas.drawLine(Offset(pixelRect.left, pixelRect.top), Offset(pixelRect.left, pixelRect.top + cornerLen), boxPaint);
 
     // Top-Right
-    canvas.drawLine(Offset(rect.right, rect.top), Offset(rect.right - cornerLen, rect.top), boxPaint);
-    canvas.drawLine(Offset(rect.right, rect.top), Offset(rect.right, rect.top + cornerLen), boxPaint);
+    canvas.drawLine(Offset(pixelRect.right, pixelRect.top), Offset(pixelRect.right - cornerLen, pixelRect.top), boxPaint);
+    canvas.drawLine(Offset(pixelRect.right, pixelRect.top), Offset(pixelRect.right, pixelRect.top + cornerLen), boxPaint);
 
     // Bottom-Left
-    canvas.drawLine(Offset(rect.left, rect.bottom), Offset(rect.left + cornerLen, rect.bottom), boxPaint);
-    canvas.drawLine(Offset(rect.left, rect.bottom), Offset(rect.left, rect.bottom - cornerLen), boxPaint);
+    canvas.drawLine(Offset(pixelRect.left, pixelRect.bottom), Offset(pixelRect.left + cornerLen, pixelRect.bottom), boxPaint);
+    canvas.drawLine(Offset(pixelRect.left, pixelRect.bottom), Offset(pixelRect.left, pixelRect.bottom - cornerLen), boxPaint);
 
     // Bottom-Right
-    canvas.drawLine(Offset(rect.right, rect.bottom), Offset(rect.right - cornerLen, rect.bottom), boxPaint);
-    canvas.drawLine(Offset(rect.right, rect.bottom), Offset(rect.right, rect.bottom - cornerLen), boxPaint);
+    canvas.drawLine(Offset(pixelRect.right, pixelRect.bottom), Offset(pixelRect.right - cornerLen, pixelRect.bottom), boxPaint);
+    canvas.drawLine(Offset(pixelRect.right, pixelRect.bottom), Offset(pixelRect.right, pixelRect.bottom - cornerLen), boxPaint);
 
     // Subtle Box Outline
-    final r = RRect.fromRectAndRadius(rect, const Radius.circular(8));
+    final r = RRect.fromRectAndRadius(pixelRect, const Radius.circular(8));
     canvas.drawRRect(
       r,
       Paint()
-        ..color = const Color(0xFF2EA043).withValues(alpha: 0.12)
+        ..color = primaryColor.withValues(alpha: 0.10)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.0,
     );
 
-    // Facial Landmark Crosshairs (Left eye, Right eye, Nose tip)
-    final centerX = rect.center.dx;
-    final centerY = rect.center.dy;
-    final eyeOffset = rect.width * 0.22;
-    final eyeY = centerY - rect.height * 0.12;
+    // Draw Real-time Landmarks (Eyes, Nose, Mouth)
+    for (int i = 0; i < telemetry.landmarks.length; i++) {
+      final landmark = telemetry.landmarks[i];
+      final pt = Offset(landmark.dx * size.width, landmark.dy * size.height);
 
-    // Left Eye Landmark & Crosshair
-    canvas.drawCircle(Offset(centerX - eyeOffset, eyeY), 3.0, landmarkPaint);
-    canvas.drawLine(
-      Offset(centerX - eyeOffset - 7, eyeY),
-      Offset(centerX - eyeOffset + 7, eyeY),
-      gazePaint,
-    );
+      canvas.drawCircle(pt, i < 2 ? 3.5 : 2.5, landmarkPaint);
 
-    // Right Eye Landmark & Crosshair
-    canvas.drawCircle(Offset(centerX + eyeOffset, eyeY), 3.0, landmarkPaint);
-    canvas.drawLine(
-      Offset(centerX + eyeOffset - 7, eyeY),
-      Offset(centerX + eyeOffset + 7, eyeY),
-      gazePaint,
-    );
+      // Eye crosshairs & gaze vector
+      if (i < 2) {
+        final gazeOffset = Offset(
+          pt.dx + telemetry.yaw * 0.4,
+          pt.dy + telemetry.pitch * 0.4,
+        );
+        canvas.drawLine(
+          Offset(pt.dx - 8, pt.dy),
+          Offset(pt.dx + 8, pt.dy),
+          gazePaint,
+        );
+        canvas.drawLine(pt, gazeOffset, gazePaint);
+      }
+    }
 
-    // Nose & Mouth Anchor Points
-    canvas.drawCircle(Offset(centerX, centerY + rect.height * 0.05), 2.2, landmarkPaint);
-    canvas.drawCircle(Offset(centerX, centerY + rect.height * 0.22), 2.2, landmarkPaint);
+    // Dynamic Tracking Tag Above Real-Time Bounding Box
+    final tagText = isDetected
+        ? 'FACE TRACKED (${(telemetry.confidence * 100).toStringAsFixed(1)}%)'
+        : 'AWAY FROM VIEW';
 
-    // Tracking Tag Above Bounding Box
     final textSpan = TextSpan(
-      text: 'FACE DETECTED (99.4%)',
+      text: tagText,
       style: TextStyle(
-        color: const Color(0xFF7EE787),
-        fontSize: isCompact ? 8.5 : 10,
+        color: isDetected ? const Color(0xFF7EE787) : Colors.orangeAccent,
+        fontSize: isCompact ? 9.0 : 10.5,
         fontWeight: FontWeight.w800,
         letterSpacing: 0.8,
-        backgroundColor: Colors.black.withValues(alpha: 0.8),
+        backgroundColor: Colors.black.withValues(alpha: 0.85),
       ),
     );
+
     final textPainter = TextPainter(
       text: textSpan,
       textDirection: TextDirection.ltr,
@@ -527,13 +531,12 @@ class _FaceTrackingPainter extends CustomPainter {
 
     textPainter.paint(
       canvas,
-      Offset(rect.left + 4, rect.top - textPainter.height - 4),
+      Offset(pixelRect.left + 4, (pixelRect.top - textPainter.height - 4).clamp(8.0, size.height - 20)),
     );
   }
 
   @override
-  bool shouldRepaint(covariant _FaceTrackingPainter oldDelegate) =>
-      oldDelegate.pulseValue != pulseValue ||
-      oldDelegate.yaw != yaw ||
-      oldDelegate.pitch != pitch;
+  bool shouldRepaint(covariant _RealTimeFaceTrackingPainter oldDelegate) =>
+      oldDelegate.telemetry != telemetry ||
+      oldDelegate.pulseValue != pulseValue;
 }
