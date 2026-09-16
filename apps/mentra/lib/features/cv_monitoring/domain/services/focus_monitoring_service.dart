@@ -14,6 +14,7 @@ abstract class IFocusMonitoringService {
   Future<void> pause();
   Future<void> resume();
   Future<void> stop();
+  void ingestObservation(FocusObservation observation);
   void dispose();
 }
 
@@ -135,6 +136,7 @@ class LocalFocusMonitoringService implements IFocusMonitoringService {
   }
 
   /// Manually ingest observation (useful for external frame sources or platform plugins)
+  @override
   void ingestObservation(FocusObservation observation) {
     if (_status == MonitoringStatus.running && !_isDisposed) {
       _eventEngine.ingestObservation(observation);
@@ -231,6 +233,11 @@ class SyntheticFocusMonitoringService implements IFocusMonitoringService {
     if (_status == MonitoringStatus.running) {
       _eventEngine.ingestObservation(observation);
     }
+  }
+
+  @override
+  void ingestObservation(FocusObservation observation) {
+    emitObservation(observation);
   }
 
   @override

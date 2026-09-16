@@ -126,6 +126,7 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
                         viewId: 'active-pip',
                         isCompact: true,
                         showControls: true,
+                        onObservation: sessionController.ingestObservation,
                         onClose: () => setState(() => _viewMode = StudyViewMode.split),
                       ),
                     ),
@@ -291,10 +292,11 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 620, maxHeight: 520),
-              child: const CameraPreviewView(
+              child: CameraPreviewView(
                 viewId: 'active-split',
                 isCompact: false,
                 showControls: true,
+                onObservation: sessionController.ingestObservation,
               ),
             ),
           ),
@@ -330,13 +332,14 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
 
               // If Camera Prominent, show Camera on top!
               if (_viewMode == StudyViewMode.cameraProminent) ...[
-                const SizedBox(
+                SizedBox(
                   height: 320,
                   width: double.infinity,
                   child: CameraPreviewView(
                     viewId: 'active-prominent',
                     isCompact: false,
                     showControls: true,
+                    onObservation: sessionController.ingestObservation,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.lg),
@@ -348,13 +351,14 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
               // If Split on mobile / single column, show Camera below timer
               if (_viewMode == StudyViewMode.split && !isWide) ...[
                 const SizedBox(height: AppSpacing.lg),
-                const SizedBox(
+                SizedBox(
                   height: 240,
                   width: double.infinity,
                   child: CameraPreviewView(
                     viewId: 'active-mobile-split',
                     isCompact: true,
                     showControls: true,
+                    onObservation: sessionController.ingestObservation,
                   ),
                 ),
               ],

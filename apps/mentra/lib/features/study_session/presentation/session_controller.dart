@@ -99,6 +99,13 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  /// Ingest real-time camera computer vision observation directly into focus engine
+  void ingestObservation(FocusObservation observation) {
+    if (_state == SessionState.active && focusMonitoringService != null) {
+      focusMonitoringService!.ingestObservation(observation);
+    }
+  }
+
   void _recalculateFocusScore() {
     final penalty = _distractionsCount * 3;
     _focusScore = (92 - penalty).clamp(55, 98);

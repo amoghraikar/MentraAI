@@ -124,12 +124,12 @@ class FocusEvent {
 /// Configurable thresholds for computer vision and temporal smoothing.
 class MonitoringConfig {
   const MonitoringConfig({
-    this.frameThrottleIntervalMs = 300,
+    this.frameThrottleIntervalMs = 200,
     this.minConfidenceThreshold = 0.60,
-    this.faceAbsentThresholdSeconds = 4.0,
-    this.drowsinessDurationThresholdSeconds = 2.0,
-    this.distractionDurationThresholdSeconds = 2.5,
-    this.alertCooldownSeconds = 20.0,
+    this.faceAbsentThresholdSeconds = 2.0,
+    this.drowsinessDurationThresholdSeconds = 1.5,
+    this.distractionDurationThresholdSeconds = 1.5,
+    this.alertCooldownSeconds = 6.0,
   });
 
   /// Time interval between consecutive CV inference frames (in ms).

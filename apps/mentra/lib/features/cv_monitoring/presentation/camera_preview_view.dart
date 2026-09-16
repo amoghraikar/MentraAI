@@ -14,6 +14,7 @@ class CameraPreviewView extends StatefulWidget {
     this.showControls = true,
     this.isAnimated = true,
     this.latestObservation,
+    this.onObservation,
     this.onClose,
   });
 
@@ -22,6 +23,7 @@ class CameraPreviewView extends StatefulWidget {
   final bool showControls;
   final bool isAnimated;
   final FocusObservation? latestObservation;
+  final void Function(FocusObservation observation)? onObservation;
   final VoidCallback? onClose;
 
   @override
@@ -57,6 +59,51 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
       setState(() {
         _telemetry = newTelemetry;
       });
+
+      final now = DateTime.now();
+      FocusObservation obs;
+
+      if (!newTelemetry.isFaceDetected) {
+        obs = FocusObservation(
+          timestamp: now,
+          isFaceDetected: false,
+          faceConfidence: 0.0,
+        );
+      } else if (newTelemetry.ear < 0.16) {
+        // Real eye closure / drowsiness detected from video pixels
+        obs = FocusObservation(
+          timestamp: now,
+          isFaceDetected: true,
+          faceBoundingBox: newTelemetry.box,
+          faceConfidence: newTelemetry.confidence,
+          eyeState: EyeState.closed,
+          eyeOpenProbability: 0.05,
+        );
+      } else if (newTelemetry.yaw.abs() > 14.0 || newTelemetry.pitch.abs() > 13.0) {
+        // Real head turned away / distraction
+        obs = FocusObservation(
+          timestamp: now,
+          isFaceDetected: true,
+          faceBoundingBox: newTelemetry.box,
+          faceConfidence: newTelemetry.confidence,
+          eyeState: EyeState.open,
+          isDistractionDetected: true,
+          distractionConfidence: 0.92,
+          distractionType: newTelemetry.pitch > 13.0 ? 'looking_down' : 'looking_away',
+        );
+      } else {
+        // Real focused state
+        obs = FocusObservation(
+          timestamp: now,
+          isFaceDetected: true,
+          faceBoundingBox: newTelemetry.box,
+          faceConfidence: newTelemetry.confidence,
+          eyeState: EyeState.open,
+          eyeOpenProbability: 0.95,
+        );
+      }
+
+      widget.onObservation?.call(obs);
     }
   }
 
