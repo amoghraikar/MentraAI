@@ -4,8 +4,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mentra/core/network/api_client.dart';
+import 'package:mentra/features/analytics/data/repositories/mock_analytics_repository.dart';
 import 'package:mentra/features/auth/services/auth_service.dart';
 import 'package:mentra/features/auth/services/token_storage_service.dart';
+import 'package:mentra/features/goals/data/repositories/mock_goal_repository.dart';
+import 'package:mentra/features/notes/data/repositories/mock_note_repository.dart';
+import 'package:mentra/features/study_session/data/repositories/mock_session_repository.dart';
+import 'package:mentra/features/subjects/data/repositories/mock_subject_repository.dart';
 import 'package:mentra/main.dart';
 
 void main() {
@@ -96,7 +101,14 @@ void main() {
       tokenStorage: storage,
     );
 
-    await tester.pumpWidget(MentraRoot(authService: authService));
+    await tester.pumpWidget(MentraRoot(
+      authService: authService,
+      subjectRepository: MockSubjectRepository(),
+      noteRepository: MockNoteRepository(),
+      goalRepository: MockGoalRepository(),
+      sessionRepository: MockSessionRepository(),
+      analyticsRepository: MockAnalyticsRepository(),
+    ));
     await tester.pumpAndSettle();
 
     // Fill credentials & Log in
@@ -212,7 +224,14 @@ void main() {
       tokenStorage: storage,
     );
 
-    await tester.pumpWidget(MentraRoot(authService: authService));
+    await tester.pumpWidget(MentraRoot(
+      authService: authService,
+      subjectRepository: MockSubjectRepository(),
+      noteRepository: MockNoteRepository(),
+      goalRepository: MockGoalRepository(),
+      sessionRepository: MockSessionRepository(),
+      analyticsRepository: MockAnalyticsRepository(),
+    ));
     await tester.pumpAndSettle();
 
     // 1. Launch Setup Dialog from Home

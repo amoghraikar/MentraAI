@@ -3,10 +3,16 @@ import 'core/constants/app_constants.dart';
 import 'core/routing/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
+import 'features/ai_coach/domain/repositories/ai_coach_repository.dart';
+import 'features/analytics/domain/repositories/analytics_repository.dart';
 import 'features/auth/presentation/auth_controller.dart';
 import 'features/auth/presentation/auth_view.dart';
 import 'features/auth/services/auth_service.dart';
+import 'features/goals/domain/repositories/goal_repository.dart';
+import 'features/notes/domain/repositories/note_repository.dart';
 import 'features/onboarding/presentation/onboarding_view.dart';
+import 'features/study_session/domain/repositories/session_repository.dart';
+import 'features/subjects/domain/repositories/subject_repository.dart';
 import 'shared/layouts/workspace_layout.dart';
 
 void main() {
@@ -19,10 +25,22 @@ class MentraRoot extends StatefulWidget {
     super.key,
     this.authService,
     this.initialShowOnboarding = false,
+    this.subjectRepository,
+    this.noteRepository,
+    this.goalRepository,
+    this.sessionRepository,
+    this.analyticsRepository,
+    this.aiCoachRepository,
   });
 
   final AuthService? authService;
   final bool initialShowOnboarding;
+  final SubjectRepository? subjectRepository;
+  final NoteRepository? noteRepository;
+  final GoalRepository? goalRepository;
+  final SessionRepository? sessionRepository;
+  final AnalyticsRepository? analyticsRepository;
+  final AiCoachRepository? aiCoachRepository;
 
   @override
   State<MentraRoot> createState() => _MentraRootState();
@@ -79,7 +97,14 @@ class _MentraRootState extends State<MentraRoot> {
                     );
                     break;
                   case AuthStatus.authenticated:
-                    homeWidget = const WorkspaceLayout();
+                    homeWidget = WorkspaceLayout(
+                      subjectRepository: widget.subjectRepository,
+                      noteRepository: widget.noteRepository,
+                      goalRepository: widget.goalRepository,
+                      sessionRepository: widget.sessionRepository,
+                      analyticsRepository: widget.analyticsRepository,
+                      aiCoachRepository: widget.aiCoachRepository,
+                    );
                     break;
                   case AuthStatus.unauthenticated:
                     homeWidget = const AuthView();

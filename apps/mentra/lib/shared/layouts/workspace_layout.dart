@@ -1,29 +1,31 @@
 import 'package:flutter/material.dart';
+import '../../core/network/api_client.dart';
 import '../../core/routing/app_route.dart';
 import '../../core/routing/app_router.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../features/ai_coach/data/repositories/mock_ai_coach_repository.dart';
 import '../../features/ai_coach/domain/repositories/ai_coach_repository.dart';
 import '../../features/ai_coach/presentation/ai_coach_page.dart';
-import '../../features/analytics/data/repositories/mock_analytics_repository.dart';
+import '../../features/analytics/data/repositories/api_analytics_repository.dart';
 import '../../features/analytics/domain/repositories/analytics_repository.dart';
 import '../../features/analytics/presentation/analytics_page.dart';
-import '../../features/goals/data/repositories/mock_goal_repository.dart';
+import '../../features/auth/services/token_storage_service.dart';
+import '../../features/goals/data/repositories/api_goal_repository.dart';
 import '../../features/goals/domain/repositories/goal_repository.dart';
 import '../../features/goals/presentation/goals_page.dart';
 import '../../features/home/presentation/home_page.dart';
-import '../../features/notes/data/repositories/mock_note_repository.dart';
+import '../../features/notes/data/repositories/api_note_repository.dart';
 import '../../features/notes/domain/repositories/note_repository.dart';
 import '../../features/notes/presentation/notes_page.dart';
 import '../../features/settings/presentation/settings_page.dart';
-import '../../features/study_session/data/repositories/mock_session_repository.dart';
+import '../../features/study_session/data/repositories/api_session_repository.dart';
 import '../../features/study_session/domain/repositories/session_repository.dart';
 import '../../features/study_session/presentation/active_study_page.dart';
 import '../../features/study_session/presentation/session_controller.dart';
 import '../../features/study_session/presentation/session_summary_page.dart';
 import '../../features/study_session/presentation/study_prep_page.dart';
 import '../../features/study_session/presentation/study_setup_dialog.dart';
-import '../../features/subjects/data/repositories/mock_subject_repository.dart';
+import '../../features/subjects/data/repositories/api_subject_repository.dart';
 import '../../features/subjects/domain/models/subject_model.dart';
 import '../../features/subjects/domain/models/topic_model.dart';
 import '../../features/subjects/domain/repositories/subject_repository.dart';
@@ -70,11 +72,21 @@ class _WorkspaceLayoutState extends State<WorkspaceLayout> {
   @override
   void initState() {
     super.initState();
-    _subjectRepo = widget.subjectRepository ?? MockSubjectRepository();
-    _noteRepo = widget.noteRepository ?? MockNoteRepository();
-    _goalRepo = widget.goalRepository ?? MockGoalRepository();
-    _sessionRepo = widget.sessionRepository ?? MockSessionRepository();
-    _analyticsRepo = widget.analyticsRepository ?? MockAnalyticsRepository();
+    final apiClient = ApiClient(
+      tokenProvider: () async {
+        try {
+          return await SecureTokenStorage().getToken();
+        } catch (_) {
+          return null;
+        }
+      },
+    );
+
+    _subjectRepo = widget.subjectRepository ?? ApiSubjectRepository(apiClient: apiClient);
+    _noteRepo = widget.noteRepository ?? ApiNoteRepository(apiClient: apiClient);
+    _goalRepo = widget.goalRepository ?? ApiGoalRepository(apiClient: apiClient);
+    _sessionRepo = widget.sessionRepository ?? ApiSessionRepository(apiClient: apiClient);
+    _analyticsRepo = widget.analyticsRepository ?? ApiAnalyticsRepository(apiClient: apiClient);
     _aiCoachRepo = widget.aiCoachRepository ?? MockAiCoachRepository();
 
     _sessionController = SessionController(sessionRepository: _sessionRepo);
