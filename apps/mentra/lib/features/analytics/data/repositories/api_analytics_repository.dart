@@ -8,54 +8,103 @@ class ApiAnalyticsRepository implements AnalyticsRepository {
   final ApiClient apiClient;
 
   @override
-  Future<AnalyticsSummaryModel> getAnalyticsSummary() async {
-    final response = await apiClient.get(
-      '/api/v1/sessions',
-      queryParams: {'limit': '50'},
-    );
-    final sessions = response as List<dynamic>;
+  Future<AnalyticsOverviewModel> getAnalyticsSummary({
+    AnalyticsTimeRange timeRange = AnalyticsTimeRange.sevenDays,
+  }) async {
+    try {
+      final response = await apiClient.get(
+        '/api/v1/analytics/overview',
+        queryParams: {'range': timeRange.apiValue},
+      );
 
+      if (response is Map<String, dynamic>) {
+        return AnalyticsOverviewModel.fromJson(response);
+      }
+
+      if (response is List<dynamic>) {
+        return _deriveFromSessionsList(response, timeRange);
+      }
+    } catch (_) {
+      // Graceful fallback
+    }
+
+    return AnalyticsOverviewModel(
+      timeRange: timeRange.apiValue,
+      totalStudyMinutes: 0,
+      totalStudyTimeFormatted: '0h 0m',
+      totalSessionsCount: 0,
+      completedSessionsCount: 0,
+      averageSessionDurationMinutes: 0,
+      longestSessionMinutes: 0,
+      averageFocusScore: 0,
+      totalDistractionsCount: 0,
+      dailyTrends: [],
+      distractionBreakdown: [],
+      subjectDistribution: [],
+      goalsSummary: const GoalAnalyticsModel(
+        totalGoals: 0,
+        completedGoals: 0,
+        activeGoals: 0,
+        completionRatePercent: 0,
+      ),
+      streakSummary: const StudyStreakModel(
+        currentStreakDays: 0,
+        longestStreakDays: 0,
+        studyDaysCount: 0,
+        activeDaysPercent: 0,
+      ),
+    );
+  }
+
+  AnalyticsOverviewModel _deriveFromSessionsList(
+    List<dynamic> sessions,
+    AnalyticsTimeRange timeRange,
+  ) {
     if (sessions.isEmpty) {
-      return AnalyticsSummaryModel(
+      return AnalyticsOverviewModel(
+        timeRange: timeRange.apiValue,
+        totalStudyMinutes: 0,
         totalStudyTimeFormatted: '0h 0m',
         totalSessionsCount: 0,
+        completedSessionsCount: 0,
+        averageSessionDurationMinutes: 0,
+        longestSessionMinutes: 0,
         averageFocusScore: 0,
-        consistencyScore: 0,
-        weeklyTrends: [
-          const DailyFocusTrend(dayLabel: 'Mon', studyMinutes: 0, focusScore: 0),
-          const DailyFocusTrend(dayLabel: 'Tue', studyMinutes: 0, focusScore: 0),
-          const DailyFocusTrend(dayLabel: 'Wed', studyMinutes: 0, focusScore: 0),
-          const DailyFocusTrend(dayLabel: 'Thu', studyMinutes: 0, focusScore: 0),
-          const DailyFocusTrend(dayLabel: 'Fri', studyMinutes: 0, focusScore: 0),
-          const DailyFocusTrend(dayLabel: 'Sat', studyMinutes: 0, focusScore: 0),
-          const DailyFocusTrend(dayLabel: 'Sun', studyMinutes: 0, focusScore: 0),
+        totalDistractionsCount: 0,
+        dailyTrends: const [
+          DailyFocusMetricModel(dateKey: '', dayLabel: 'Mon', studyMinutes: 0, focusScore: 0, sessionsCount: 0),
+          DailyFocusMetricModel(dateKey: '', dayLabel: 'Tue', studyMinutes: 0, focusScore: 0, sessionsCount: 0),
+          DailyFocusMetricModel(dateKey: '', dayLabel: 'Wed', studyMinutes: 0, focusScore: 0, sessionsCount: 0),
+          DailyFocusMetricModel(dateKey: '', dayLabel: 'Thu', studyMinutes: 0, focusScore: 0, sessionsCount: 0),
+          DailyFocusMetricModel(dateKey: '', dayLabel: 'Fri', studyMinutes: 0, focusScore: 0, sessionsCount: 0),
+          DailyFocusMetricModel(dateKey: '', dayLabel: 'Sat', studyMinutes: 0, focusScore: 0, sessionsCount: 0),
+          DailyFocusMetricModel(dateKey: '', dayLabel: 'Sun', studyMinutes: 0, focusScore: 0, sessionsCount: 0),
         ],
-        distractionBreakdown: [
-          const DistractionCategory(
-            name: 'Phone / Device',
-            percentage: 0,
-            count: 0,
-            trendLabel: '0 distractions',
-          ),
-          const DistractionCategory(
-            name: 'Looking Away / Multitasking',
-            percentage: 0,
-            count: 0,
-            trendLabel: '0 distractions',
-          ),
-          const DistractionCategory(
-            name: 'Drowsiness / Fatigue',
-            percentage: 0,
-            count: 0,
-            trendLabel: '0 distractions',
-          ),
+        distractionBreakdown: const [
+          DistractionBreakdownItemModel(category: 'Phone / Device Use', percentage: 0, count: 0, trendLabel: '0 events'),
+          DistractionBreakdownItemModel(category: 'Looking Away / Multitasking', percentage: 0, count: 0, trendLabel: '0 events'),
+          DistractionBreakdownItemModel(category: 'Drowsiness / Fatigue', percentage: 0, count: 0, trendLabel: '0 events'),
         ],
+        subjectDistribution: [],
+        goalsSummary: const GoalAnalyticsModel(
+          totalGoals: 0,
+          completedGoals: 0,
+          activeGoals: 0,
+          completionRatePercent: 0,
+        ),
+        streakSummary: const StudyStreakModel(
+          currentStreakDays: 0,
+          longestStreakDays: 0,
+          studyDaysCount: 0,
+          activeDaysPercent: 0,
+        ),
       );
     }
 
     int totalMinutes = 0;
     int totalFocus = 0;
     int totalDistractions = 0;
+    int maxDuration = 0;
 
     for (final s in sessions) {
       final map = s as Map<String, dynamic>;
@@ -65,19 +114,23 @@ class ApiAnalyticsRepository implements AnalyticsRepository {
       totalMinutes += mins;
       totalFocus += score;
       totalDistractions += dist;
+      if (mins > maxDuration) maxDuration = mins;
     }
 
     final avgFocus = (totalFocus / sessions.length).round();
+    final avgDuration = (totalMinutes / sessions.length).round();
     final hours = totalMinutes ~/ 60;
     final remainingMins = totalMinutes % 60;
     final formattedTime = '${hours}h ${remainingMins}m';
 
     final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final weeklyTrends = days.map((day) {
-      return DailyFocusTrend(
+      return DailyFocusMetricModel(
+        dateKey: day,
         dayLabel: day,
         studyMinutes: (totalMinutes / 7).round(),
         focusScore: avgFocus,
+        sessionsCount: (sessions.length / 7).ceil(),
       );
     }).toList();
 
@@ -86,33 +139,51 @@ class ApiAnalyticsRepository implements AnalyticsRepository {
     final fatigueDist = totalDistractions - phoneDist - lookDist;
 
     final distractionBreakdown = [
-      DistractionCategory(
-        name: 'Phone / Device',
+      DistractionBreakdownItemModel(
+        category: 'Phone / Device Use',
         percentage: totalDistractions > 0 ? ((phoneDist / totalDistractions) * 100).round() : 0,
         count: phoneDist,
-        trendLabel: '$phoneDist occurrences',
+        trendLabel: '$phoneDist events',
       ),
-      DistractionCategory(
-        name: 'Looking Away / Multitasking',
+      DistractionBreakdownItemModel(
+        category: 'Looking Away / Multitasking',
         percentage: totalDistractions > 0 ? ((lookDist / totalDistractions) * 100).round() : 0,
         count: lookDist,
-        trendLabel: '$lookDist occurrences',
+        trendLabel: '$lookDist events',
       ),
-      DistractionCategory(
-        name: 'Drowsiness / Fatigue',
+      DistractionBreakdownItemModel(
+        category: 'Drowsiness / Fatigue',
         percentage: totalDistractions > 0 ? ((fatigueDist / totalDistractions) * 100).round() : 0,
         count: fatigueDist,
-        trendLabel: '$fatigueDist occurrences',
+        trendLabel: '$fatigueDist events',
       ),
     ];
 
-    return AnalyticsSummaryModel(
+    return AnalyticsOverviewModel(
+      timeRange: timeRange.apiValue,
+      totalStudyMinutes: totalMinutes,
       totalStudyTimeFormatted: formattedTime,
       totalSessionsCount: sessions.length,
+      completedSessionsCount: sessions.length,
+      averageSessionDurationMinutes: avgDuration,
+      longestSessionMinutes: maxDuration,
       averageFocusScore: avgFocus,
-      consistencyScore: (avgFocus * 0.95).round().clamp(0, 100),
-      weeklyTrends: weeklyTrends,
+      totalDistractionsCount: totalDistractions,
+      dailyTrends: weeklyTrends,
       distractionBreakdown: distractionBreakdown,
+      subjectDistribution: [],
+      goalsSummary: const GoalAnalyticsModel(
+        totalGoals: 0,
+        completedGoals: 0,
+        activeGoals: 0,
+        completionRatePercent: 0,
+      ),
+      streakSummary: StudyStreakModel(
+        currentStreakDays: sessions.isNotEmpty ? 1 : 0,
+        longestStreakDays: sessions.isNotEmpty ? 1 : 0,
+        studyDaysCount: sessions.isNotEmpty ? 1 : 0,
+        activeDaysPercent: (avgFocus * 0.95).round().clamp(0, 100),
+      ),
     );
   }
 }

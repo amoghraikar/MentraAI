@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import select
-from app.db.session import SessionLocal
+from app.db import session as db_session
 from app.models.goal import Goal, GoalMilestone
 from app.models.note import Note
 from app.models.study_session import StudySession
@@ -11,7 +11,7 @@ from app.models.user import User
 
 
 def test_database_connection_and_models():
-    db = SessionLocal()
+    db = db_session.SessionLocal()
     try:
         # Create user
         uid = str(uuid.uuid4())

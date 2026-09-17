@@ -1,5 +1,7 @@
 import '../models/analytics_data.dart';
 
 abstract class AnalyticsRepository {
-  Future<AnalyticsSummaryModel> getAnalyticsSummary();
+  Future<AnalyticsOverviewModel> getAnalyticsSummary({
+    AnalyticsTimeRange timeRange = AnalyticsTimeRange.sevenDays,
+  });
 }
