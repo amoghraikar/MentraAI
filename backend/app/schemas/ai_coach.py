@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,7 +17,7 @@ class AiCoachChatResponse(BaseModel):
     message: str
     action_suggestion: Optional[str] = None
     suggested_next_steps: List[str] = Field(default_factory=list)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # --- Topic Explanation Schemas ---
