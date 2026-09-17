@@ -31,7 +31,7 @@ enum MentraLogoLayout {
   appIcon,
 }
 
-/// Official Mentra Brand Mark (Open book & sprouting leaf geometry)
+/// Official Mentra Brand Mark
 class MentraBrandMark extends StatelessWidget {
   const MentraBrandMark({
     super.key,
@@ -49,6 +49,13 @@ class MentraBrandMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final useWhite = (variant == MentraLogoVariant.light) ||
+        (variant == MentraLogoVariant.adaptive && isDark);
+
+    final assetPath = useWhite
+        ? 'assets/images/mentra_brand_mark_white.png'
+        : 'assets/images/mentra_brand_mark.png';
 
     Color leafColor;
     Color sproutColor = customSproutColor ?? AppColors.brandSage;
@@ -76,11 +83,20 @@ class MentraBrandMark extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(
-        painter: _MentraLogoPainter(
-          leafColor: leafColor,
-          sproutColor: sproutColor,
-        ),
+      child: Image.asset(
+        assetPath,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) {
+          return CustomPaint(
+            size: Size(size, size),
+            painter: _MentraLogoPainter(
+              leafColor: leafColor,
+              sproutColor: sproutColor,
+            ),
+          );
+        },
       ),
     );
   }
@@ -245,7 +261,7 @@ class MentraLogo extends StatelessWidget {
       );
     }
 
-    // Horizontal layout
+    // Horizontal layout with exact wordmark rendering and auto-fit scaling
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: Alignment.centerLeft,
