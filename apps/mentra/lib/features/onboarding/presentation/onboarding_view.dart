@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/mentra_button.dart';
 import '../../../shared/widgets/mentra_card.dart';
+import '../../../shared/widgets/mentra_logo.dart';
 
 class OnboardingView extends StatefulWidget {
   const OnboardingView({
@@ -96,47 +96,13 @@ class _OnboardingViewState extends State<OnboardingView> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF232830) : const Color(0xFFE8E8E6),
-                              borderRadius: AppRadius.borderSm,
-                            ),
-                            child: Center(
-                              child: Text(
-                                'M',
-                                style: AppTypography.titleLarge.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: theme.colorScheme.primary,
-                                  height: 1,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                AppConstants.appName.toUpperCase(),
-                                style: AppTypography.labelLarge.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1.2,
-                                ),
-                              ),
-                              Text(
-                                AppConstants.appCategory,
-                                style: AppTypography.labelSmall.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                      const Flexible(
+                        child: MentraLogo(
+                          markSize: 26,
+                          layout: MentraLogoLayout.horizontal,
+                          showTagline: true,
+                          taglineText: 'FOCUS / LEARN / GROW',
+                        ),
                       ),
                       Row(
                         children: List.generate(_steps.length, (index) {

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/mentra_button.dart';
 import '../../../shared/widgets/mentra_card.dart';
+import '../../../shared/widgets/mentra_logo.dart';
 import 'auth_controller.dart';
 
 class AuthView extends StatefulWidget {
@@ -100,44 +100,13 @@ class _AuthViewState extends State<AuthView> {
                       const SizedBox(height: AppSpacing.sm),
                     ],
 
-                    // Brand Icon & Wordmark
-                    Center(
-                      child: Column(
-                        children: [
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFE8E8E6),
-                              borderRadius: AppRadius.borderSm,
-                            ),
-                            child: Center(
-                              child: Text(
-                                'M',
-                                style: AppTypography.titleLarge.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: theme.colorScheme.primary,
-                                  height: 1,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          Text(
-                            AppConstants.appName.toUpperCase(),
-                            style: AppTypography.titleMedium.copyWith(
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.5,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xxs),
-                          Text(
-                            AppConstants.appCategory,
-                            style: AppTypography.labelSmall.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
+                    // Official Brand Icon & Wordmark
+                    const Center(
+                      child: MentraLogo(
+                        markSize: 44,
+                        layout: MentraLogoLayout.stacked,
+                        showTagline: true,
+                        taglineText: 'FOCUS  /  LEARN  /  GROW',
                       ),
                     ),
 

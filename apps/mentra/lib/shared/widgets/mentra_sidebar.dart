@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/app_constants.dart';
 import '../../core/routing/app_route.dart';
 import '../../core/routing/app_router.dart';
 import '../../core/theme/app_colors.dart';
@@ -7,6 +6,7 @@ import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 import 'mentra_button.dart';
+import 'mentra_logo.dart';
 
 class MentraSidebar extends StatelessWidget {
   const MentraSidebar({
@@ -40,58 +40,19 @@ class MentraSidebar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Wordmark & Branding Area
+          // Official Wordmark & Branding Area
           Padding(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.base,
-              AppSpacing.lg,
+              AppSpacing.base,
               AppSpacing.base,
               AppSpacing.sm,
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF2C2C2C) : const Color(0xFFE8E8E6),
-                    borderRadius: AppRadius.borderSm,
-                  ),
-                  child: Center(
-                    child: Text(
-                      'M',
-                      style: AppTypography.titleMedium.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: theme.colorScheme.primary,
-                        height: 1,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      AppConstants.appName.toUpperCase(),
-                      style: AppTypography.labelLarge.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.2,
-                        height: 1.1,
-                      ),
-                    ),
-                    Text(
-                      AppConstants.appCategory,
-                      style: AppTypography.labelSmall.copyWith(
-                        fontSize: 10,
-                        color: theme.colorScheme.onSurfaceVariant,
-                        letterSpacing: 0.2,
-                        height: 1.1,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+            child: const MentraLogo(
+              markSize: 28,
+              layout: MentraLogoLayout.horizontal,
+              showTagline: true,
+              taglineText: 'FOCUS  /  LEARN  /  GROW',
             ),
           ),
 

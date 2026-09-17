@@ -53,7 +53,7 @@ void main() {
     await tester.tap(find.text('Get Started'));
     await tester.pumpAndSettle();
 
-    expect(find.text('MENTRA'), findsWidgets);
+    expect(find.text('Mentra'), findsWidgets);
     expect(find.text('Sign In'), findsWidgets);
   });
 

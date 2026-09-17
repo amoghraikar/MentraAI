@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" width="100%" height="100%">
+  <!-- Mentra Official Brand Mark -->
+  <g id="mentra-mark" transform="translate(10, 10)">
+    <!-- Left Leaf / Page -->
+    <path d="M 12,24 L 44,14 L 44,86 L 12,74 Z" fill="#173029" />
+    
+    <!-- Upper Right Sprout / Leaf (Growth Accent) -->
+    <path d="M 56,44 L 56,24 Q 56,12 72,12 Q 88,16 88,36 Z" fill="#8EB89B" />
+    
+    <!-- Lower Right Leaf / Page -->
+    <path d="M 56,52 L 88,44 L 88,72 L 56,86 Z" fill="#173029" />
+  </g>
+
+  <!-- Wordmark -->
+  <text x="120" y="66" font-family="-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif" font-size="52" font-weight="800" fill="#173029" letter-spacing="-1">Mentra</text>
+  
+  <!-- Tagline -->
+  <text x="122" y="88" font-family="-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="600" fill="#5A7069" letter-spacing="3.2">FOCUS  /  LEARN  /  GROW</text>
+</svg>

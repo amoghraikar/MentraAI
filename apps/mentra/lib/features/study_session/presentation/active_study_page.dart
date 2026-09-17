@@ -6,6 +6,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../shared/dialogs/mentra_dialogs.dart';
 import '../../../shared/widgets/mentra_badge.dart';
 import '../../../shared/widgets/mentra_button.dart';
+import '../../../shared/widgets/mentra_logo.dart';
 import '../../cv_monitoring/domain/models/monitoring_models.dart';
 import '../../cv_monitoring/presentation/camera_preview_view.dart';
 import 'session_controller.dart';
@@ -144,23 +145,7 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
                       children: [
                         Row(
                           children: [
-                            Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF21262D) : const Color(0xFFE8E8E6),
-                                borderRadius: AppRadius.borderSm,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  'M',
-                                  style: AppTypography.labelLarge.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: theme.colorScheme.primary,
-                                  ),
-                                ),
-                              ),
-                            ),
+                            const MentraBrandMark(size: 26),
                             const SizedBox(width: AppSpacing.sm),
                             Text(
                               'MENTRA FOCUS & CV ENGINE',

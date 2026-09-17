@@ -1,11 +1,11 @@
 {
-    "name": "mentra",
-    "short_name": "mentra",
+    "name": "Mentra — AI Study Coach",
+    "short_name": "Mentra",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#173029",
+    "theme_color": "#173029",
+    "description": "Mentra is your personal study companion — helping you stay focused, build better habits, and reach your goals.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
