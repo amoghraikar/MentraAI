@@ -3,7 +3,6 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../shared/widgets/mentra_badge.dart';
 import '../../../shared/widgets/mentra_button.dart';
 import '../../subjects/domain/models/subject_model.dart';
 import '../../subjects/domain/models/topic_model.dart';
@@ -14,26 +13,50 @@ class StudySetupDialog extends StatefulWidget {
   const StudySetupDialog({
     super.key,
     required this.subjectRepository,
+    required this.onStartPreparation,
     this.initialSubjectId,
     this.initialTopicId,
-    required this.onStartPreparation,
   });
 
   final SubjectRepository subjectRepository;
+  final ValueChanged<SessionConfig> onStartPreparation;
   final String? initialSubjectId;
   final String? initialTopicId;
-  final void Function(SessionConfig config) onStartPreparation;
+
+  static final SubjectModel defaultGeneralSubject = SubjectModel(
+    id: 'general_study',
+    title: 'General Focus & Deep Work',
+    code: 'FOCUS',
+    description: 'General open study session',
+    colorHex: '#6366F1',
+    totalHours: 0.0,
+    targetHours: 20.0,
+    topics: const [
+      TopicModel(
+        id: 'general_topic',
+        subjectId: 'general_study',
+        title: 'General Coursework',
+        description: 'Open study focus block',
+        progress: 0.0,
+        totalMinutes: 0,
+        keyConcepts: [],
+        notesSnippet: '',
+        isCompleted: false,
+      ),
+    ],
+  );
 
   static Future<void> show({
     required BuildContext context,
     required SubjectRepository subjectRepository,
+    required ValueChanged<SessionConfig> onStartPreparation,
     String? initialSubjectId,
     String? initialTopicId,
-    required void Function(SessionConfig config) onStartPreparation,
   }) {
     return showDialog(
       context: context,
-      builder: (ctx) => StudySetupDialog(
+      barrierDismissible: true,
+      builder: (context) => StudySetupDialog(
         subjectRepository: subjectRepository,
         initialSubjectId: initialSubjectId,
         initialTopicId: initialTopicId,
@@ -66,30 +89,35 @@ class _StudySetupDialogState extends State<StudySetupDialog> {
   }
 
   Future<void> _loadSubjects() async {
-    final list = await widget.subjectRepository.getSubjects();
+    List<SubjectModel> list = [];
+    try {
+      list = await widget.subjectRepository.getSubjects();
+    } catch (_) {
+      list = [];
+    }
     if (!mounted) return;
     setState(() {
-      _subjects = list;
-      if (_subjects.isNotEmpty) {
-        if (widget.initialSubjectId != null) {
-          _selectedSubject = _subjects.firstWhere(
-            (s) => s.id == widget.initialSubjectId,
-            orElse: () => _subjects.first,
+      _subjects = list.isNotEmpty ? list : [StudySetupDialog.defaultGeneralSubject];
+      if (widget.initialSubjectId != null) {
+        _selectedSubject = _subjects.firstWhere(
+          (s) => s.id == widget.initialSubjectId,
+          orElse: () => _subjects.first,
+        );
+      } else {
+        _selectedSubject = _subjects.first;
+      }
+
+      if (_selectedSubject!.topics.isNotEmpty) {
+        if (widget.initialTopicId != null) {
+          _selectedTopic = _selectedSubject!.topics.firstWhere(
+            (t) => t.id == widget.initialTopicId,
+            orElse: () => _selectedSubject!.topics.first,
           );
         } else {
-          _selectedSubject = _subjects.first;
+          _selectedTopic = _selectedSubject!.topics.first;
         }
-
-        if (_selectedSubject!.topics.isNotEmpty) {
-          if (widget.initialTopicId != null) {
-            _selectedTopic = _selectedSubject!.topics.firstWhere(
-              (t) => t.id == widget.initialTopicId,
-              orElse: () => _selectedSubject!.topics.first,
-            );
-          } else {
-            _selectedTopic = _selectedSubject!.topics.first;
-          }
-        }
+      } else {
+        _selectedTopic = null;
       }
       _isLoading = false;
     });
@@ -104,11 +132,12 @@ class _StudySetupDialogState extends State<StudySetupDialog> {
   }
 
   void _submit() {
-    if (_selectedSubject == null) return;
+    final effectiveSubject = _selectedSubject ??
+        (_subjects.isNotEmpty ? _subjects.first : StudySetupDialog.defaultGeneralSubject);
 
     final config = SessionConfig(
-      subjectId: _selectedSubject!.id,
-      subjectTitle: _selectedSubject!.title,
+      subjectId: effectiveSubject.id,
+      subjectTitle: effectiveSubject.title,
       topicId: _selectedTopic?.id ?? 'gen_top',
       topicTitle: _selectedTopic?.title ?? 'General Coursework',
       targetDurationMinutes: _selectedDuration,
@@ -261,10 +290,10 @@ class _StudySetupDialogState extends State<StudySetupDialog> {
                                 ),
                               ),
                               child: Text(
-                                '$d min',
+                                '${d}m',
                                 style: AppTypography.labelSmall.copyWith(
                                   color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface,
-                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                                 ),
                               ),
                             ),
@@ -275,39 +304,36 @@ class _StudySetupDialogState extends State<StudySetupDialog> {
 
                     const SizedBox(height: AppSpacing.md),
 
-                    // Study Mode Chips
-                    Text('Study Mode', style: AppTypography.labelSmall),
+                    // Mode Radio / Chips
+                    Text('Mode', style: AppTypography.labelSmall),
                     const SizedBox(height: AppSpacing.xs),
-                    Row(
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: AppSpacing.xs,
                       children: _modes.map((m) {
                         final isSelected = _selectedMode == m;
-                        return Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: AppSpacing.xs),
-                            child: MouseRegion(
-                              cursor: SystemMouseCursors.click,
-                              child: GestureDetector(
-                                onTap: () => setState(() => _selectedMode = m),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? theme.colorScheme.primary.withValues(alpha: isDark ? 0.2 : 0.1)
-                                        : (isDark ? const Color(0xFF222222) : const Color(0xFFF2F2F0)),
-                                    borderRadius: AppRadius.borderSm,
-                                    border: Border.all(
-                                      color: isSelected ? theme.colorScheme.primary : theme.dividerColor,
-                                      width: isSelected ? 1.5 : 1,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    m,
-                                    style: AppTypography.labelSmall.copyWith(
-                                      color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface,
-                                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                                    ),
-                                  ),
+                        return MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: GestureDetector(
+                            onTap: () => setState(() => _selectedMode = m),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 120),
+                              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? theme.colorScheme.primary.withValues(alpha: isDark ? 0.2 : 0.1)
+                                    : (isDark ? const Color(0xFF222222) : const Color(0xFFF2F2F0)),
+                                borderRadius: AppRadius.borderSm,
+                                border: Border.all(
+                                  color: isSelected ? theme.colorScheme.primary : theme.dividerColor,
+                                  width: isSelected ? 1.5 : 1,
+                                ),
+                              ),
+                              child: Text(
+                                m,
+                                style: AppTypography.labelSmall.copyWith(
+                                  color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface,
+                                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                                 ),
                               ),
                             ),
@@ -318,35 +344,29 @@ class _StudySetupDialogState extends State<StudySetupDialog> {
 
                     const SizedBox(height: AppSpacing.lg),
 
-                    // Focus Monitoring Card
+                    // On-device focus monitoring toggle
                     Container(
                       padding: const EdgeInsets.all(AppSpacing.md),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF9F9F8),
+                        color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF7F7F6),
                         borderRadius: AppRadius.borderSm,
                         border: Border.all(color: theme.dividerColor),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.shield_outlined, color: AppColors.success, size: 20),
+                          Icon(
+                            Icons.visibility_outlined,
+                            size: 20,
+                            color: theme.colorScheme.primary,
+                          ),
                           const SizedBox(width: AppSpacing.md),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        'Mentra Focus Monitoring',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: AppTypography.labelMedium,
-                                      ),
-                                    ),
-                                    const SizedBox(width: AppSpacing.xs),
-                                    const MentraBadge(label: 'On-Device', variant: MentraBadgeVariant.success),
-                                  ],
+                                Text(
+                                  'On-Device Focus Monitoring',
+                                  style: AppTypography.labelSmall.copyWith(fontWeight: FontWeight.w600),
                                 ),
                                 const SizedBox(height: AppSpacing.xxs),
                                 Text(
