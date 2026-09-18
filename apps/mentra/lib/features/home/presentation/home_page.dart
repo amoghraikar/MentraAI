@@ -5,7 +5,6 @@ import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/mentra_badge.dart';
 import '../../../shared/widgets/mentra_button.dart';
 import '../../../shared/widgets/mentra_card.dart';
-import '../../../shared/widgets/mentra_progress_bar.dart';
 import '../../../shared/widgets/mentra_section.dart';
 import '../../../shared/widgets/mentra_stat_card.dart';
 import '../../study_session/domain/models/study_session_record.dart';
@@ -128,59 +127,6 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ],
-          ),
-        ),
-
-        const SizedBox(height: AppSpacing.xl),
-
-        // Continue Studying Card
-        MentraSection(
-          title: 'Continue Studying',
-          subtitle: 'Pick up right where you left off',
-          child: MentraCard(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const MentraBadge(label: 'DATA ANALYTICS', variant: MentraBadgeVariant.primary),
-                          const SizedBox(width: AppSpacing.sm),
-                          Text('Unit II', style: AppTypography.labelSmall),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        'Correlation & Multiple Regression',
-                        style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: AppSpacing.xxs),
-                      Text(
-                        'Ordinary Least Squares (OLS) residual diagnostics and ANOVA F-tests',
-                        style: AppTypography.bodySmall.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      const MentraProgressBar(
-                        value: 0.78,
-                        label: 'Topic Progress',
-                        valueLabel: '78%',
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xl),
-                MentraButton(
-                  label: 'Continue',
-                  icon: Icons.play_arrow_rounded,
-                  onPressed: widget.onStartStudySession,
-                ),
-              ],
-            ),
           ),
         ),
 
