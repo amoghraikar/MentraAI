@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -10,6 +11,78 @@ import '../../../shared/widgets/mentra_page_header.dart';
 import '../../../shared/widgets/mentra_section.dart';
 import '../domain/models/coach_insight.dart';
 import '../domain/repositories/ai_coach_repository.dart';
+
+enum CoachGptPersona {
+  conceptTutor(
+    label: 'Master Tutor',
+    icon: Icons.school_rounded,
+    description: 'First-principles breakdown, intuitive analogies, and step-by-step derivations',
+    prompts: [
+      'Optimal study interval?',
+      'Active recall strategy',
+      'How to eliminate phone distraction?',
+      'Teach me Data Analytics',
+      'Explain OLS Regression',
+      'What is Gradient Descent?',
+    ],
+  ),
+  activeQuizzer(
+    label: 'Active Quizzer',
+    icon: Icons.quiz_rounded,
+    description: 'Active recall drills, retrieval practice questions, and formula tests',
+    prompts: [
+      'Quiz me on Data Analytics',
+      'Test my understanding of ANOVA',
+      'Active recall questions on ML',
+      'Flash quiz on study methods',
+    ],
+  ),
+  studyArchitect(
+    label: 'Study Architect',
+    icon: Icons.calendar_month_rounded,
+    description: 'Day-by-day revision timetables, Pomodoro pacing, and milestone roadmaps',
+    prompts: [
+      'Create a 7-day study plan',
+      'Optimal study interval?',
+      'How to structure 2-hour revision block',
+      'Exam preparation schedule',
+    ],
+  ),
+  focusMindset(
+    label: 'Focus & Mindset',
+    icon: Icons.self_improvement_rounded,
+    description: 'Anti-distraction tactics, phone friction boundaries, and fatigue resets',
+    prompts: [
+      'How to eliminate phone distraction?',
+      'How to beat drowsiness?',
+      'Overcoming study procrastination',
+      'The 20-20-20 visual reset technique',
+    ],
+  ),
+  progressAnalyst(
+    label: 'Progress Analyst',
+    icon: Icons.insights_rounded,
+    description: 'Live database telemetry analysis, focus health score, and retention trends',
+    prompts: [
+      'How is my progress?',
+      'Analyze my focus baseline',
+      'Evaluate my study consistency',
+      'What topic should I study next?',
+    ],
+  );
+
+  const CoachGptPersona({
+    required this.label,
+    required this.icon,
+    required this.description,
+    required this.prompts,
+  });
+
+  final String label;
+  final IconData icon;
+  final String description;
+  final List<String> prompts;
+}
 
 class AiCoachPage extends StatefulWidget {
   const AiCoachPage({
@@ -32,6 +105,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
   bool _isSending = false;
   String? _errorMessage;
   String _selectedProvider = 'Dynamic Real-Time AI';
+  CoachGptPersona _selectedPersona = CoachGptPersona.conceptTutor;
 
   @override
   void initState() {
@@ -126,6 +200,29 @@ class _AiCoachPageState extends State<AiCoachPage> {
           curve: Curves.easeOut,
         );
       }
+    });
+  }
+
+  void _copyToClipboard(String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Copied response to clipboard'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _clearChatHistory() {
+    setState(() {
+      _messages = [
+        ChatMessage(
+          id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
+          sender: 'coach',
+          text: 'New session initialized with **${_selectedPersona.label} GPT**. How can I guide your study focus today?',
+          timestamp: DateTime.now(),
+        ),
+      ];
     });
   }
 
@@ -263,7 +360,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
             const Expanded(
               child: MentraPageHeader(
                 title: 'AI Coach',
-                subtitle: 'Real-time personalized instruction, academic breakdown, and focus guidance',
+                subtitle: 'Study Coach GPT — real-time instruction, concept breakdown, active quizzes, and focus coaching',
               ),
             ),
             IconButton(
@@ -299,13 +396,13 @@ class _AiCoachPageState extends State<AiCoachPage> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text('Study Coach Active', style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700)),
-                        const MentraBadge(label: 'Real-Time AI Active', variant: MentraBadgeVariant.success),
+                        const MentraBadge(label: 'Study GPT Active', variant: MentraBadgeVariant.success),
                         MentraBadge(label: _selectedProvider, variant: MentraBadgeVariant.primary),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      'Ask any question across any academic domain, study strategy, progress analytics, or topic deconstruction.',
+                      'Ask any question across any academic domain, request active recall quizzes, generate revision timetables, or analyze telemetry.',
                       style: AppTypography.bodySmall.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -392,36 +489,99 @@ class _AiCoachPageState extends State<AiCoachPage> {
         // Interactive "Ask Mentra" Study Chat Workspace
         MentraSection(
           title: 'Ask Mentra',
-          subtitle: 'Real-time AI instruction — ask about any topic, concept, formula, progress analysis, or study strategy',
+          subtitle: 'Study Coach GPT Workspace — switch personas, test recall, break down complex concepts, or request custom roadmaps',
           child: MentraCard(
             padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Quick Suggestion Chips
+                // Persona Selector Tabs
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
-                    children: [
-                      _buildPromptChip('Teach me Data Analytics'),
-                      const SizedBox(width: AppSpacing.xs),
-                      _buildPromptChip('How is my progress?'),
-                      const SizedBox(width: AppSpacing.xs),
-                      _buildPromptChip('Explain OLS Regression'),
-                      const SizedBox(width: AppSpacing.xs),
-                      _buildPromptChip('Optimal study interval?'),
-                      const SizedBox(width: AppSpacing.xs),
-                      _buildPromptChip('Active recall strategy'),
-                      const SizedBox(width: AppSpacing.xs),
-                      _buildPromptChip('How to beat drowsiness?'),
-                    ],
+                    children: CoachGptPersona.values.map((persona) {
+                      final isSelected = _selectedPersona == persona;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: AppSpacing.xs),
+                        child: FilterChip(
+                          selected: isSelected,
+                          avatar: Icon(
+                            persona.icon,
+                            size: 16,
+                            color: isSelected ? Colors.white : AppColors.primary,
+                          ),
+                          label: Text(persona.label),
+                          labelStyle: AppTypography.labelSmall.copyWith(
+                            color: isSelected ? Colors.white : theme.colorScheme.onSurface,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
+                          ),
+                          selectedColor: AppColors.primary,
+                          backgroundColor: isDark ? const Color(0xFF1E2420) : const Color(0xFFF0F4F2),
+                          side: BorderSide(
+                            color: isSelected ? AppColors.primary : theme.dividerColor,
+                          ),
+                          onSelected: (_) {
+                            setState(() {
+                              _selectedPersona = persona;
+                            });
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  _selectedPersona.description,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontStyle: FontStyle.italic,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.md),
 
+                // Quick Suggestion Chips for Selected Persona
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: _selectedPersona.prompts.map((p) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: AppSpacing.xs),
+                        child: _buildPromptChip(p),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+
+                // Header with Clear Chat action
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Conversation Session',
+                      style: AppTypography.labelSmall.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.refresh_rounded, size: 14),
+                      label: Text('New Chat', style: AppTypography.labelSmall),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: _clearChatHistory,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
+
                 // Message History List
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 380),
+                  constraints: const BoxConstraints(maxHeight: 400),
                   child: ListView.builder(
                     controller: _scrollController,
                     shrinkWrap: true,
@@ -434,7 +594,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
                         child: Container(
                           margin: const EdgeInsets.only(bottom: AppSpacing.md),
                           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-                          constraints: const BoxConstraints(maxWidth: 620),
+                          constraints: const BoxConstraints(maxWidth: 640),
                           decoration: BoxDecoration(
                             color: isUser
                                 ? theme.colorScheme.primary
@@ -450,21 +610,35 @@ class _AiCoachPageState extends State<AiCoachPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Icon(
-                                    isUser ? Icons.person_outline_rounded : Icons.psychology_outlined,
-                                    size: 14,
-                                    color: isUser ? Colors.white70 : AppColors.primary,
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isUser ? Icons.person_outline_rounded : _selectedPersona.icon,
+                                        size: 14,
+                                        color: isUser ? Colors.white70 : AppColors.primary,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        isUser ? 'You' : 'Mentra ${_selectedPersona.label}',
+                                        style: AppTypography.labelSmall.copyWith(
+                                          color: isUser ? Colors.white70 : AppColors.primary,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    isUser ? 'You' : 'Mentra Coach',
-                                    style: AppTypography.labelSmall.copyWith(
-                                      color: isUser ? Colors.white70 : AppColors.primary,
-                                      fontWeight: FontWeight.w700,
+                                  if (!isUser)
+                                    IconButton(
+                                      icon: const Icon(Icons.copy_rounded, size: 14),
+                                      tooltip: 'Copy response',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                      onPressed: () => _copyToClipboard(msg.text),
                                     ),
-                                  ),
                                 ],
                               ),
                               const SizedBox(height: AppSpacing.xs),
@@ -488,7 +662,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       Text(
-                        'Mentra is generating real-time response...',
+                        'Mentra ${_selectedPersona.label} is generating real-time response...',
                         style: AppTypography.labelSmall.copyWith(color: AppColors.primary),
                       ),
                     ],
@@ -507,7 +681,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
                         controller: _queryController,
                         onSubmitted: (_) => _sendQuestion(),
                         decoration: InputDecoration(
-                          hintText: 'e.g. Teach me Data Analytics, Explain ANOVA tests, How is my focus?',
+                          hintText: 'Ask ${_selectedPersona.label} anything...',
                           hintStyle: AppTypography.bodySmall.copyWith(
                             color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                           ),
@@ -581,7 +755,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('• ', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+                const Text('• ', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
                 Expanded(
                   child: Text(
                     bulletText.replaceAll('**', ''),
