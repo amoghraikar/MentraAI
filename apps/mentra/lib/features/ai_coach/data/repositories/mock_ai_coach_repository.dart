@@ -47,7 +47,17 @@ class MockAiCoachRepository implements AiCoachRepository {
   }
 
   @override
-  Future<ChatMessage> askCoachQuestion(String question, {String? subjectId, String? topicId}) async {
+  Future<ChatMessage> askCoachQuestion(
+    String question, {
+    String? subjectId,
+    String? topicId,
+    List<ChatMessage>? history,
+    String? provider,
+    String? apiKey,
+    String? model,
+    String? customSystemPrompt,
+    String? customEndpointUrl,
+  }) async {
     await Future.delayed(const Duration(milliseconds: 300));
     final q = question.toLowerCase();
 

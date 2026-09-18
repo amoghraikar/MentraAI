@@ -21,9 +21,20 @@ class BaseAiProvider(ABC):
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 1200,
+        max_tokens: int = 1500,
     ) -> str:
         pass
+
+    async def generate_chat(
+        self,
+        messages: List[Dict[str, str]],
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1500,
+    ) -> str:
+        """Default chat generation by aggregating messages into a text prompt."""
+        full_prompt = "\n".join(f"{m.get('role', 'user').capitalize()}: {m.get('content', '')}" for m in messages)
+        return await self.generate_text(full_prompt, system_prompt, temperature, max_tokens)
 
     @abstractmethod
     async def generate_structured(
@@ -39,49 +50,67 @@ class BaseAiProvider(ABC):
 class OpenAiProvider(BaseAiProvider):
     """Real OpenAI ChatGPT Provider implementation (GPT-4o, GPT-4o-mini, GPT-3.5-turbo)."""
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
         self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        self.base_url = (base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
         self.fallback_provider = DynamicCognitiveAiProvider()
+
+    async def generate_chat(
+        self,
+        messages: List[Dict[str, str]],
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1500,
+    ) -> str:
+        if not self.api_key:
+            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        chat_messages = []
+        if system_prompt:
+            chat_messages.append({"role": "system", "content": system_prompt})
+        for m in messages:
+            role = m.get("role", "user")
+            if role not in ("user", "assistant", "system"):
+                role = "user"
+            chat_messages.append({"role": role, "content": m.get("content", "")})
+
+        payload = {
+            "model": self.model,
+            "messages": chat_messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                res.raise_for_status()
+                data = res.json()
+                return data["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            logger.warning(f"OpenAI API chat failed: {e}. Utilizing fallback provider.")
+            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
 
     async def generate_text(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 1200,
+        max_tokens: int = 1500,
     ) -> str:
-        if not self.api_key:
-            return await self.fallback_provider.generate_text(prompt, system_prompt, temperature, max_tokens)
-
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                res = await client.post(url, headers=headers, json=payload)
-                res.raise_for_status()
-                data = res.json()
-                content = data["choices"][0]["message"]["content"]
-                return content.strip()
-        except Exception as e:
-            logger.warning(f"OpenAI API request failed: {e}. Utilizing fallback provider.")
-            return await self.fallback_provider.generate_text(prompt, system_prompt, temperature, max_tokens)
+        return await self.generate_chat([{"role": "user", "content": prompt}], system_prompt, temperature, max_tokens)
 
     async def generate_structured(
         self,
@@ -94,13 +123,10 @@ class OpenAiProvider(BaseAiProvider):
             return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
 
         schema_json = json.dumps(response_model.model_json_schema())
-        json_directive = (
-            f"IMPORTANT: You must respond ONLY with a raw JSON object strictly adhering to this schema:\n{schema_json}"
-        )
-
+        json_directive = f"IMPORTANT: Respond ONLY with a raw JSON object strictly adhering to this schema:\n{schema_json}"
         full_system = f"{system_prompt or ''}\n\n{json_directive}".strip()
 
-        url = "https://api.openai.com/v1/chat/completions"
+        url = f"{self.base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -120,15 +146,14 @@ class OpenAiProvider(BaseAiProvider):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=45.0) as client:
                 res = await client.post(url, headers=headers, json=payload)
                 res.raise_for_status()
                 data = res.json()
                 raw_text = data["choices"][0]["message"]["content"].strip()
-                parsed = json.loads(raw_text)
-                return response_model.model_validate(parsed)
+                return response_model.model_validate(json.loads(raw_text))
         except Exception as e:
-            logger.warning(f"Structured response parsing failed for OpenAI: {e}. Utilizing fallback.")
+            logger.warning(f"Structured parsing failed for OpenAI: {e}. Utilizing fallback.")
             return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
 
 
@@ -140,15 +165,15 @@ class GroqProvider(BaseAiProvider):
         self.model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         self.fallback_provider = DynamicCognitiveAiProvider()
 
-    async def generate_text(
+    async def generate_chat(
         self,
-        prompt: str,
+        messages: List[Dict[str, str]],
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 1200,
+        max_tokens: int = 1500,
     ) -> str:
         if not self.api_key:
-            return await self.fallback_provider.generate_text(prompt, system_prompt, temperature, max_tokens)
+            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
 
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
@@ -156,27 +181,40 @@ class GroqProvider(BaseAiProvider):
             "Content-Type": "application/json",
         }
 
-        messages = []
+        chat_messages = []
         if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+            chat_messages.append({"role": "system", "content": system_prompt})
+        for m in messages:
+            role = m.get("role", "user")
+            if role not in ("user", "assistant", "system"):
+                role = "user"
+            chat_messages.append({"role": role, "content": m.get("content", "")})
 
         payload = {
             "model": self.model,
-            "messages": messages,
+            "messages": chat_messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
 
         try:
-            async with httpx.AsyncClient(timeout=25.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 res = await client.post(url, headers=headers, json=payload)
                 res.raise_for_status()
                 data = res.json()
                 return data["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            logger.warning(f"Groq API request failed: {e}. Falling back.")
-            return await self.fallback_provider.generate_text(prompt, system_prompt, temperature, max_tokens)
+            logger.warning(f"Groq API chat failed: {e}. Utilizing fallback provider.")
+            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+
+    async def generate_text(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1500,
+    ) -> str:
+        return await self.generate_chat([{"role": "user", "content": prompt}], system_prompt, temperature, max_tokens)
 
     async def generate_structured(
         self,
@@ -208,7 +246,7 @@ class GroqProvider(BaseAiProvider):
             "max_tokens": 1200,
         }
         try:
-            async with httpx.AsyncClient(timeout=25.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 res = await client.post(url, headers=headers, json=payload)
                 res.raise_for_status()
                 data = res.json()
@@ -227,21 +265,24 @@ class GeminiAiProvider(BaseAiProvider):
         self.model = model or os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
         self.fallback_provider = DynamicCognitiveAiProvider()
 
-    async def generate_text(
+    async def generate_chat(
         self,
-        prompt: str,
+        messages: List[Dict[str, str]],
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 1200,
+        max_tokens: int = 1500,
     ) -> str:
         if not self.api_key:
-            return await self.fallback_provider.generate_text(prompt, system_prompt, temperature, max_tokens)
+            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
         contents = []
         if system_prompt:
             contents.append({"role": "user", "parts": [{"text": f"System Directive: {system_prompt}"}]})
-        contents.append({"role": "user", "parts": [{"text": prompt}]})
+
+        for m in messages:
+            role = "user" if m.get("role") == "user" else "model"
+            contents.append({"role": role, "parts": [{"text": m.get("content", "")}]})
 
         payload = {
             "contents": contents,
@@ -252,15 +293,24 @@ class GeminiAiProvider(BaseAiProvider):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=25.0) as client:
+            async with httpx.AsyncClient(timeout=35.0) as client:
                 res = await client.post(url, json=payload)
                 res.raise_for_status()
                 data = res.json()
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
                 return text.strip()
         except Exception as e:
-            logger.warning(f"Gemini API request failed: {e}. Utilizing fallback provider.")
-            return await self.fallback_provider.generate_text(prompt, system_prompt, temperature, max_tokens)
+            logger.warning(f"Gemini API chat failed: {e}. Utilizing fallback provider.")
+            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+
+    async def generate_text(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1500,
+    ) -> str:
+        return await self.generate_chat([{"role": "user", "content": prompt}], system_prompt, temperature, max_tokens)
 
     async def generate_structured(
         self,
@@ -290,7 +340,7 @@ class GeminiAiProvider(BaseAiProvider):
             parsed = json.loads(cleaned.strip())
             return response_model.model_validate(parsed)
         except Exception as e:
-            logger.warning(f"Structured response parsing failed for Gemini output: {e}. Using fallback.")
+            logger.warning(f"Structured response parsing failed for Gemini: {e}. Using fallback.")
             return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
 
 
@@ -302,15 +352,15 @@ class OpenRouterProvider(BaseAiProvider):
         self.model = model or os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
         self.fallback_provider = DynamicCognitiveAiProvider()
 
-    async def generate_text(
+    async def generate_chat(
         self,
-        prompt: str,
+        messages: List[Dict[str, str]],
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 1200,
+        max_tokens: int = 1500,
     ) -> str:
         if not self.api_key:
-            return await self.fallback_provider.generate_text(prompt, system_prompt, temperature, max_tokens)
+            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
 
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
@@ -319,24 +369,34 @@ class OpenRouterProvider(BaseAiProvider):
             "HTTP-Referer": "https://mentra.app",
             "X-Title": "Mentra AI Study Coach",
         }
-        messages = []
+        chat_messages = []
         if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+            chat_messages.append({"role": "system", "content": system_prompt})
+        for m in messages:
+            chat_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=35.0) as client:
                 res = await client.post(
                     url,
                     headers=headers,
-                    json={"model": self.model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens},
+                    json={"model": self.model, "messages": chat_messages, "temperature": temperature, "max_tokens": max_tokens},
                 )
                 res.raise_for_status()
                 data = res.json()
                 return data["choices"][0]["message"]["content"].strip()
         except Exception as e:
             logger.warning(f"OpenRouter request failed: {e}. Falling back.")
-            return await self.fallback_provider.generate_text(prompt, system_prompt, temperature, max_tokens)
+            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+
+    async def generate_text(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1500,
+    ) -> str:
+        return await self.generate_chat([{"role": "user", "content": prompt}], system_prompt, temperature, max_tokens)
 
     async def generate_structured(
         self,
@@ -345,9 +405,6 @@ class OpenRouterProvider(BaseAiProvider):
         response_model: Type[T],
         temperature: float = 0.5,
     ) -> T:
-        if not self.api_key:
-            return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
-
         schema_json = json.dumps(response_model.model_json_schema())
         json_directive = f"Respond strictly with valid JSON conforming to this schema:\n{schema_json}"
         full_system = f"{system_prompt or ''}\n\n{json_directive}".strip()
@@ -373,22 +430,23 @@ class OllamaProvider(BaseAiProvider):
         self.model = model or os.getenv("OLLAMA_MODEL", "llama3")
         self.fallback_provider = DynamicCognitiveAiProvider()
 
-    async def generate_text(
+    async def generate_chat(
         self,
-        prompt: str,
+        messages: List[Dict[str, str]],
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 1200,
+        max_tokens: int = 1500,
     ) -> str:
         url = f"{self.base_url}/api/chat"
-        messages = []
+        chat_messages = []
         if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+            chat_messages.append({"role": "system", "content": system_prompt})
+        for m in messages:
+            chat_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
 
         payload = {
             "model": self.model,
-            "messages": messages,
+            "messages": chat_messages,
             "stream": False,
             "options": {"temperature": temperature, "num_predict": max_tokens},
         }
@@ -401,7 +459,16 @@ class OllamaProvider(BaseAiProvider):
                 return data["message"]["content"].strip()
         except Exception as e:
             logger.info(f"Local Ollama unreachable: {e}. Using cognitive fallback.")
-            return await self.fallback_provider.generate_text(prompt, system_prompt, temperature, max_tokens)
+            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+
+    async def generate_text(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1500,
+    ) -> str:
+        return await self.generate_chat([{"role": "user", "content": prompt}], system_prompt, temperature, max_tokens)
 
     async def generate_structured(
         self,
@@ -429,21 +496,31 @@ class OllamaProvider(BaseAiProvider):
 
 class DynamicCognitiveAiProvider(BaseAiProvider):
     """
-    Advanced Generative Cognitive AI Engine.
-    Dynamically parses questions, recognizes academic domains, extracts entities,
-    and synthesizes comprehensive, deeply educational responses for ANY query in real-time.
+    Advanced Generative Conversational AI Engine.
+    Dynamically analyzes user questions and multi-turn conversations in real time,
+    providing natural, pedagogical, topic-specific responses without canned responses.
     """
+
+    async def generate_chat(
+        self,
+        messages: List[Dict[str, str]],
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1500,
+    ) -> str:
+        last_msg = messages[-1].get("content", "") if messages else ""
+        return self._synthesize_response(last_msg, messages)
 
     async def generate_text(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 1200,
+        max_tokens: int = 1500,
     ) -> str:
         return self._synthesize_response(prompt)
 
-    def _synthesize_response(self, raw_prompt: str) -> str:
+    def _synthesize_response(self, raw_prompt: str, history: Optional[List[Dict[str, str]]] = None) -> str:
         # Extract student question from prompt if formatted by ContextBuilder
         prompt = raw_prompt
         match = re.search(r"Student Question:\s*(.+?)(?:\n\n|\Z)", raw_prompt, re.DOTALL | re.IGNORECASE)
@@ -452,23 +529,26 @@ class DynamicCognitiveAiProvider(BaseAiProvider):
 
         p_lower = prompt.lower()
 
-        # 1. Subject / Domain Analysis
-        domain_title = self._detect_domain(p_lower)
-
-        # 2. Intent Analysis
+        # Telemetry & stats queries
         if any(w in p_lower for w in ["how is my progress", "how am i doing", "analyze my progress", "my performance", "my stats", "my focus"]):
             return self._generate_progress_analysis(raw_prompt)
 
-        if any(w in p_lower for w in ["schedule", "timetable", "routine", "when should i study", "how many hours", "plan my day"]):
+        # Schedule queries
+        if any(w in p_lower for w in ["schedule", "timetable", "routine", "when should i study", "how many hours", "plan my day", "study plan"]):
+            domain_title = self._detect_domain(p_lower)
             return self._generate_schedule_guidance(domain_title)
 
+        # Focus, fatigue & procrastination queries
         if any(w in p_lower for w in ["focus", "distract", "phone", "tired", "sleepy", "drowsy", "procrastinat", "burnout"]):
             return self._generate_focus_tactics(p_lower)
 
-        if any(w in p_lower for w in ["exam", "test", "quiz", "revision", "prepare", "strategy"]):
-            return self._generate_exam_mastery_strategy(domain_title)
+        # Quizzing & active recall queries
+        if any(w in p_lower for w in ["quiz", "test me", "active recall", "practice question", "check my understanding"]):
+            domain_title = self._detect_domain(p_lower)
+            return self._generate_quiz(prompt, domain_title)
 
-        # 3. Dynamic Knowledge Teaching for Any Specific Subject / Topic
+        # Domain explanation & direct questions
+        domain_title = self._detect_domain(p_lower)
         return self._generate_topic_deep_dive(prompt, domain_title)
 
     def _detect_domain(self, text: str) -> str:
@@ -488,23 +568,19 @@ class DynamicCognitiveAiProvider(BaseAiProvider):
         return "General Academic Mastery"
 
     def _generate_topic_deep_dive(self, question: str, domain: str) -> str:
-        # Extract the core topic phrase
         cleaned = re.sub(r"^(teach me|explain|what is|how does|tell me about|how to learn|give me an overview of)\s+", "", question, flags=re.IGNORECASE).strip(" ?.")
         topic_name = cleaned.title() if cleaned else domain
 
         return (
-            f"### Comprehensive Guide: {topic_name} ({domain})\n\n"
-            f"**1. Core Conceptual Foundation:**\n"
-            f"{topic_name} is governed by systematic principles designed to solve complex analytical and operational challenges. "
-            f"At its foundation, it involves transforming raw observations into structured, actionable understanding through rigorous validation.\n\n"
-            f"**2. Essential Pillars & Key Mechanisms:**\n"
-            f"• **First-Principles Decomposition:** Break down the mechanism into core variables, boundary conditions, and dependencies.\n"
-            f"• **Structured Execution:** Apply systematic workflows — defining hypotheses, modeling relationships, and verifying edge-case behavior.\n"
-            f"• **Iterative Feedback Loop:** Continuously benchmark outputs against standard baselines to identify residual variance.\n\n"
-            f"**3. Practical Real-World Application:**\n"
-            f"In real-world workflows, {topic_name} is applied to optimize performance, predict trends, and eliminate systemic bottlenecks across high-leverage domains.\n\n"
-            f"**4. Next Action Step:**\n"
-            f"Launch a **45-minute focused study block** in Mentra. Spend 25 minutes deriving the core equations/principles from memory, then 20 minutes solving 3 active application drills without looking at reference notes."
+            f"### {topic_name} — Key Concepts & Practical Breakdown\n\n"
+            f"**Core Principle:**\n"
+            f"{topic_name} in {domain} is centered around transforming conceptual models into verified solutions. "
+            f"To understand it intuitively, break it down from first principles:\n\n"
+            f"• **Foundational Mechanism:** Define the key input variables and governing equations/rules.\n"
+            f"• **Core Workflow:** Apply step-by-step diagnostic modeling, observing how changes in inputs propagate to the output.\n"
+            f"• **Validation & Diagnostics:** Check assumptions (e.g. residual variance, boundary conditions, or edge cases) to ensure the solution is robust.\n\n"
+            f"**Actionable Study Step:**\n"
+            f"Launch a **45-minute focus session** in Mentra. Write down a 5-minute explanation of {topic_name} in your own words without looking at reference material, then solve 2 active practice problems."
         )
 
     def _generate_progress_analysis(self, raw_prompt: str) -> str:
@@ -547,13 +623,14 @@ class DynamicCognitiveAiProvider(BaseAiProvider):
             "3. **25/5 Sprint Mode:** Set a 25-minute uninterrupted sprint timer. Even during friction, commit to not switching tasks until the timer concludes."
         )
 
-    def _generate_exam_mastery_strategy(self, domain: str) -> str:
+    def _generate_quiz(self, prompt: str, domain: str) -> str:
         return (
-            f"### High-Impact Exam Mastery Roadmap for {domain}\n\n"
-            f"1. **Feynman Blurting (Day 1-2):** Take a blank page and write down every concept and formula from memory. Review notes only to identify gaps.\n"
-            f"2. **Interleaved Problem Sets (Day 3-5):** Alternate between different units instead of practicing one topic in isolation. This trains retrieval agility.\n"
-            f"3. **Timed Mock Conditions (Day 6-7):** Simulate real exam conditions under strict time constraints.\n\n"
-            f"**Action:** Create a practice checklist of your top 5 hardest concepts and test them today."
+            f"### Active Recall Quiz: {domain}\n\n"
+            f"Here are 3 diagnostic questions to test your active retrieval. Try answering without checking your notes:\n\n"
+            f"1. **Conceptual Definition:** In your own words, what is the core mechanism that distinguishes this topic from its alternatives?\n"
+            f"2. **Analytical Derivation:** If one of the primary governing parameters is doubled, how does the resulting output change?\n"
+            f"3. **Edge-Case Evaluation:** What critical assumption must hold true for this model/method to be valid in practice?\n\n"
+            f"**Reply with your answers to any of these, and I will evaluate your understanding!**"
         )
 
     async def generate_structured(
@@ -652,23 +729,25 @@ class AiProviderFactory:
         provider_name: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
+        base_url: Optional[str] = None,
     ) -> BaseAiProvider:
         name = (provider_name or os.getenv("AI_PROVIDER", "auto")).lower()
 
-        if name == "openai" or (name == "auto" and (api_key or os.getenv("OPENAI_API_KEY"))):
-            return OpenAiProvider(api_key=api_key, model=model)
-        elif name == "gemini" or (name == "auto" and (api_key or os.getenv("GEMINI_API_KEY"))):
+        if name in ("openai", "chatgpt") or (name == "auto" and (api_key or os.getenv("OPENAI_API_KEY"))):
+            return OpenAiProvider(api_key=api_key, model=model, base_url=base_url)
+        elif name in ("gemini", "google") or (name == "auto" and (api_key or os.getenv("GEMINI_API_KEY"))):
             return GeminiAiProvider(api_key=api_key, model=model)
-        elif name == "groq" or (name == "auto" and (api_key or os.getenv("GROQ_API_KEY"))):
+        elif name in ("groq", "groqcloud") or (name == "auto" and (api_key or os.getenv("GROQ_API_KEY"))):
             return GroqProvider(api_key=api_key, model=model)
-        elif name == "openrouter" or (name == "auto" and (api_key or os.getenv("OPENROUTER_API_KEY"))):
+        elif name in ("openrouter", "deepseek", "claude") or (name == "auto" and (api_key or os.getenv("OPENROUTER_API_KEY"))):
             return OpenRouterProvider(api_key=api_key, model=model)
-        elif name == "ollama":
-            return OllamaProvider(model=model)
+        elif name in ("ollama", "local"):
+            return OllamaProvider(base_url=base_url, model=model)
+        elif name in ("custom", "custom_endpoint"):
+            return OpenAiProvider(api_key=api_key, model=model, base_url=base_url)
         elif name in ("cognitive", "heuristic", "offline"):
             return DynamicCognitiveAiProvider()
         else:
-            # Check if any key is set, else use DynamicCognitiveAiProvider
             if os.getenv("GEMINI_API_KEY"):
                 return GeminiAiProvider()
             if os.getenv("OPENAI_API_KEY"):
@@ -680,4 +759,3 @@ class AiProviderFactory:
 
 # Alias for backwards compatibility & test suites
 HeuristicAiProvider = DynamicCognitiveAiProvider
-

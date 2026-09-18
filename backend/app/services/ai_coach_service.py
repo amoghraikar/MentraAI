@@ -56,28 +56,33 @@ class AiCoachService:
     ) -> AiCoachChatResponse:
         # 1. Select provider (custom or default)
         active_provider = self.provider
-        if request.provider or request.api_key or request.model:
+        if request.provider or request.api_key or request.model or request.custom_endpoint_url:
             active_provider = AiProviderFactory.get_provider(
                 provider_name=request.provider,
                 api_key=request.api_key,
                 model=request.model,
+                base_url=request.custom_endpoint_url,
             )
 
-        # 2. Build bounded context
-        context_str = "General Study Context"
+        # 2. Build system context
+        context_str = ""
         if request.include_study_context:
             context = ContextBuilder.build_user_study_context(
                 db, user_id, request.subject_id, request.topic_id
             )
             context_str = ContextBuilder.format_context_for_prompt(context)
 
-        prompt = (
-            f"User Study Context:\n{context_str}\n\n"
-            f"Student Question: {request.message}\n\n"
-            "Provide an insightful, practical, structured, and highly encouraging answer with clear actionable steps."
-        )
+        system_prompt = request.custom_system_prompt or COACH_SYSTEM_PROMPT
+        if context_str and context_str != "General Study Context":
+            system_prompt = f"{system_prompt}\n\n[Active Student Telemetry]:\n{context_str}"
 
-        # 3. Persist user message
+        # 3. Build multi-turn chat messages
+        chat_messages = []
+        for item in request.history:
+            chat_messages.append({"role": item.role, "content": item.content})
+        chat_messages.append({"role": "user", "content": request.message})
+
+        # 4. Persist user message
         user_msg = CoachMessage(
             id=str(uuid.uuid4()),
             user_id=user_id,
@@ -87,14 +92,14 @@ class AiCoachService:
         )
         db.add(user_msg)
 
-        # 4. Generate response
-        response_text = await active_provider.generate_text(
-            prompt=prompt,
-            system_prompt=COACH_SYSTEM_PROMPT,
+        # 5. Generate response
+        response_text = await active_provider.generate_chat(
+            messages=chat_messages,
+            system_prompt=system_prompt,
             temperature=0.7,
         )
 
-        # 5. Persist coach response
+        # 6. Persist coach response
         coach_msg_id = str(uuid.uuid4())
         coach_msg = CoachMessage(
             id=coach_msg_id,

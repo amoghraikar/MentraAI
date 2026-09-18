@@ -4,14 +4,22 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 # --- Chat Schemas ---
+class ChatHistoryItem(BaseModel):
+    role: str = Field("user", description="user or assistant")
+    content: str = Field(..., description="Message text")
+
+
 class AiCoachChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000, description="Learner prompt or question")
+    history: List[ChatHistoryItem] = Field(default_factory=list, description="Prior conversation history turns")
     subject_id: Optional[str] = Field(None, description="Optional active subject identifier")
     topic_id: Optional[str] = Field(None, description="Optional active topic identifier")
     include_study_context: bool = Field(True, description="Whether to enrich prompt with user study metrics")
-    provider: Optional[str] = Field(None, description="Optional custom provider (gemini, openai, groq, etc.)")
-    api_key: Optional[str] = Field(None, description="Optional custom API key")
-    model: Optional[str] = Field(None, description="Optional custom model name")
+    provider: Optional[str] = Field(None, description="Custom provider: openai, gemini, groq, openrouter, ollama, custom")
+    api_key: Optional[str] = Field(None, description="Custom API key")
+    model: Optional[str] = Field(None, description="Custom model name (e.g. gpt-4o, gemini-1.5-pro, llama-3.3-70b)")
+    custom_system_prompt: Optional[str] = Field(None, description="Custom system instructions for the GPT")
+    custom_endpoint_url: Optional[str] = Field(None, description="Custom OpenAI-compatible base URL")
 
 
 class AiCoachChatResponse(BaseModel):
@@ -24,9 +32,11 @@ class AiCoachChatResponse(BaseModel):
 
 
 class AiCoachConfigRequest(BaseModel):
-    provider: str = Field("auto", description="auto, gemini, openai, groq, openrouter, ollama, cognitive")
+    provider: str = Field("auto", description="auto, gemini, openai, groq, openrouter, ollama, custom")
     api_key: Optional[str] = Field(None, description="API key")
     model: Optional[str] = Field(None, description="Model identifier")
+    custom_system_prompt: Optional[str] = Field(None, description="System instructions")
+    custom_endpoint_url: Optional[str] = Field(None, description="Custom base URL")
 
 
 class AiCoachConfigResponse(BaseModel):
@@ -34,6 +44,8 @@ class AiCoachConfigResponse(BaseModel):
     is_cloud_connected: bool
     supported_providers: List[str]
     model: str
+    custom_system_prompt: Optional[str] = None
+
 
 
 

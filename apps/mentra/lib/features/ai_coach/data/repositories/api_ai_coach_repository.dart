@@ -52,6 +52,7 @@ class ApiAiCoachRepository implements AiCoachRepository {
           );
         }).toList();
       }
+      return [];
     } catch (_) {
       // Fallback gracefully
     }
@@ -63,15 +64,34 @@ class ApiAiCoachRepository implements AiCoachRepository {
     String question, {
     String? subjectId,
     String? topicId,
+    List<ChatMessage>? history,
+    String? provider,
+    String? apiKey,
+    String? model,
+    String? customSystemPrompt,
+    String? customEndpointUrl,
   }) async {
     try {
+      final historyPayload = (history ?? []).map((h) {
+        return {
+          'role': h.sender == 'user' ? 'user' : 'assistant',
+          'content': h.text,
+        };
+      }).toList();
+
       final res = await apiClient.post(
         '/api/v1/ai-coach/chat',
         body: {
           'message': question,
+          'history': historyPayload,
           'subject_id': subjectId,
           'topic_id': topicId,
           'include_study_context': true,
+          if (provider != null) ...{'provider': provider},
+          if (apiKey != null && apiKey.isNotEmpty) 'api_key': apiKey,
+          if (model != null && model.isNotEmpty) 'model': model,
+          if (customSystemPrompt != null && customSystemPrompt.isNotEmpty) 'custom_system_prompt': customSystemPrompt,
+          if (customEndpointUrl != null && customEndpointUrl.isNotEmpty) 'custom_endpoint_url': customEndpointUrl,
         },
       );
       if (res is Map<String, dynamic>) {
@@ -87,7 +107,17 @@ class ApiAiCoachRepository implements AiCoachRepository {
     } catch (_) {
       // Fallback gracefully
     }
-    return _fallback.askCoachQuestion(question, subjectId: subjectId, topicId: topicId);
+    return _fallback.askCoachQuestion(
+      question,
+      subjectId: subjectId,
+      topicId: topicId,
+      history: history,
+      provider: provider,
+      apiKey: apiKey,
+      model: model,
+      customSystemPrompt: customSystemPrompt,
+      customEndpointUrl: customEndpointUrl,
+    );
   }
 
   @override

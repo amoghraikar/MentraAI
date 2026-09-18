@@ -104,7 +104,13 @@ class _AiCoachPageState extends State<AiCoachPage> {
   bool _isLoading = true;
   bool _isSending = false;
   String? _errorMessage;
-  String _selectedProvider = 'Dynamic Real-Time AI';
+
+  // Custom GPT Configuration
+  String _selectedProvider = 'openai';
+  String _customApiKey = '';
+  String _customModel = 'gpt-4o-mini';
+  String _customSystemPrompt = '';
+  String _customEndpointUrl = '';
   CoachGptPersona _selectedPersona = CoachGptPersona.conceptTutor;
 
   @override
@@ -167,7 +173,15 @@ class _AiCoachPageState extends State<AiCoachPage> {
     _scrollToBottom();
 
     try {
-      final reply = await widget.aiCoachRepository.askCoachQuestion(text);
+      final reply = await widget.aiCoachRepository.askCoachQuestion(
+        text,
+        history: _messages,
+        provider: _selectedProvider,
+        apiKey: _customApiKey,
+        model: _customModel,
+        customSystemPrompt: _customSystemPrompt.isNotEmpty ? _customSystemPrompt : null,
+        customEndpointUrl: _customEndpointUrl.isNotEmpty ? _customEndpointUrl : null,
+      );
       if (!mounted) return;
       setState(() {
         _messages.add(reply);
@@ -181,7 +195,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
           ChatMessage(
             id: 'err_${DateTime.now().millisecondsSinceEpoch}',
             sender: 'coach',
-            text: 'I am temporarily unable to reach the coaching engine. Using local focus heuristics.',
+            text: 'I am temporarily unable to reach the AI engine. Please verify your internet connection or API Key.',
             timestamp: DateTime.now(),
           ),
         );
@@ -219,7 +233,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
         ChatMessage(
           id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
           sender: 'coach',
-          text: 'New session initialized with **${_selectedPersona.label} GPT**. How can I guide your study focus today?',
+          text: 'New session initialized with **${_selectedPersona.label} GPT**. Ask any question to begin!',
           timestamp: DateTime.now(),
         ),
       ];
@@ -227,7 +241,10 @@ class _AiCoachPageState extends State<AiCoachPage> {
   }
 
   void _showAiConfigDialog() {
-    final keyController = TextEditingController();
+    final keyController = TextEditingController(text: _customApiKey);
+    final modelController = TextEditingController(text: _customModel);
+    final promptController = TextEditingController(text: _customSystemPrompt);
+    final endpointController = TextEditingController(text: _customEndpointUrl);
     String tempProvider = _selectedProvider;
 
     showDialog(
@@ -239,9 +256,9 @@ class _AiCoachPageState extends State<AiCoachPage> {
               backgroundColor: Theme.of(context).colorScheme.surface,
               title: Row(
                 children: [
-                  const Icon(Icons.tune_rounded, color: AppColors.primary, size: 22),
+                  const Icon(Icons.psychology_outlined, color: AppColors.primary, size: 22),
                   const SizedBox(width: AppSpacing.sm),
-                  Text('AI Engine Configuration', style: AppTypography.titleMedium),
+                  Text('Custom Study GPT Setup', style: AppTypography.titleMedium),
                 ],
               ),
               content: SingleChildScrollView(
@@ -250,65 +267,102 @@ class _AiCoachPageState extends State<AiCoachPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Mentra uses a real-time multi-provider AI engine. Select your preferred provider or enter your custom API key:',
+                      'Connect your own GPT model, API key, or custom LLM endpoint to power your study assistant with zero preset limits:',
                       style: AppTypography.bodySmall,
                     ),
                     const SizedBox(height: AppSpacing.md),
                     DropdownButtonFormField<String>(
                       initialValue: tempProvider,
                       decoration: const InputDecoration(
-                        labelText: 'AI Provider',
+                        labelText: 'GPT Engine / LLM Provider',
                         border: OutlineInputBorder(),
                       ),
                       items: const [
-                        DropdownMenuItem(value: 'Dynamic Real-Time AI', child: Text('Dynamic Real-Time AI (Built-in)')),
-                        DropdownMenuItem(value: 'Google Gemini', child: Text('Google Gemini (Gemini 1.5 / 2.0)')),
-                        DropdownMenuItem(value: 'OpenAI ChatGPT', child: Text('OpenAI ChatGPT (GPT-4o / Mini)')),
-                        DropdownMenuItem(value: 'Groq Cloud', child: Text('Groq Cloud (Llama 3.3 70B)')),
-                        DropdownMenuItem(value: 'OpenRouter', child: Text('OpenRouter (Multi-Model)')),
-                        DropdownMenuItem(value: 'Ollama Local', child: Text('Ollama (Local LLM)')),
+                        DropdownMenuItem(value: 'openai', child: Text('OpenAI ChatGPT (GPT-4o / GPT-4o-mini)')),
+                        DropdownMenuItem(value: 'gemini', child: Text('Google Gemini (Gemini 1.5 / 2.0)')),
+                        DropdownMenuItem(value: 'groq', child: Text('Groq Cloud (Llama 3.3 70B)')),
+                        DropdownMenuItem(value: 'openrouter', child: Text('OpenRouter (Claude, DeepSeek, Llama)')),
+                        DropdownMenuItem(value: 'ollama', child: Text('Ollama (Local Offline LLM)')),
+                        DropdownMenuItem(value: 'custom', child: Text('Custom OpenAI-Compatible API')),
+                        DropdownMenuItem(value: 'cognitive', child: Text('Mentra Dynamic Real-Time AI')),
                       ],
                       onChanged: (val) {
                         if (val != null) {
-                          setModalState(() => tempProvider = val);
+                          setModalState(() {
+                            tempProvider = val;
+                            if (val == 'openai') modelController.text = 'gpt-4o-mini';
+                            if (val == 'gemini') modelController.text = 'gemini-1.5-flash';
+                            if (val == 'groq') modelController.text = 'llama-3.3-70b-versatile';
+                            if (val == 'openrouter') modelController.text = 'meta-llama/llama-3.3-70b-instruct:free';
+                            if (val == 'ollama') modelController.text = 'llama3';
+                          });
                         }
                       },
                     ),
                     const SizedBox(height: AppSpacing.md),
-                    if (tempProvider != 'Dynamic Real-Time AI' && tempProvider != 'Ollama Local') ...[
+                    if (tempProvider != 'cognitive' && tempProvider != 'ollama') ...[
                       TextField(
                         controller: keyController,
                         obscureText: true,
                         decoration: InputDecoration(
-                          labelText: '$tempProvider API Key',
-                          hintText: 'Enter your personal key (optional)',
+                          labelText: '${tempProvider.toUpperCase()} API Key',
+                          hintText: 'Enter your API key (e.g. sk-...)',
                           border: const OutlineInputBorder(),
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        'Leave empty to use default environment configuration.',
-                        style: AppTypography.labelSmall.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                      ),
+                      const SizedBox(height: AppSpacing.md),
                     ],
+                    if (tempProvider == 'custom' || tempProvider == 'ollama') ...[
+                      TextField(
+                        controller: endpointController,
+                        decoration: const InputDecoration(
+                          labelText: 'Base Endpoint URL',
+                          hintText: 'e.g. http://localhost:11434/v1 or https://api.together.xyz/v1',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                    ],
+                    TextField(
+                      controller: modelController,
+                      decoration: const InputDecoration(
+                        labelText: 'Model Identifier',
+                        hintText: 'e.g. gpt-4o, gemini-1.5-pro, llama-3.3-70b',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    TextField(
+                      controller: promptController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Custom System Instructions (Optional)',
+                        hintText: 'e.g. You are a strict Harvard professor, answer concisely with step-by-step math.',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
                   ],
                 ),
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Close'),
+                  child: const Text('Cancel'),
                 ),
                 MentraButton(
-                  label: 'Save Configuration',
+                  label: 'Connect & Save GPT',
                   icon: Icons.check_rounded,
                   onPressed: () {
                     setState(() {
                       _selectedProvider = tempProvider;
+                      _customApiKey = keyController.text.trim();
+                      _customModel = modelController.text.trim();
+                      _customSystemPrompt = promptController.text.trim();
+                      _customEndpointUrl = endpointController.text.trim();
                     });
                     Navigator.of(ctx).pop();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('AI Engine set to $_selectedProvider')),
+                      SnackBar(content: Text('Connected to $_selectedProvider (${_customModel.isNotEmpty ? _customModel : "default"})')),
                     );
                   },
                 ),
@@ -363,9 +417,9 @@ class _AiCoachPageState extends State<AiCoachPage> {
                 subtitle: 'Study Coach GPT — real-time instruction, concept breakdown, active quizzes, and focus coaching',
               ),
             ),
-            IconButton(
-              tooltip: 'Configure AI Provider & Keys',
-              icon: const Icon(Icons.settings_outlined, color: AppColors.primary),
+            MentraButton(
+              label: 'GPT Settings & Key',
+              icon: Icons.tune_rounded,
               onPressed: _showAiConfigDialog,
             ),
           ],
@@ -396,13 +450,16 @@ class _AiCoachPageState extends State<AiCoachPage> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text('Study Coach Active', style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700)),
-                        const MentraBadge(label: 'Study GPT Active', variant: MentraBadgeVariant.success),
-                        MentraBadge(label: _selectedProvider, variant: MentraBadgeVariant.primary),
+                        const MentraBadge(label: 'Real-Time GPT Active', variant: MentraBadgeVariant.success),
+                        MentraBadge(
+                          label: '${_selectedProvider.toUpperCase()} (${_customModel.isNotEmpty ? _customModel : "live"})',
+                          variant: MentraBadgeVariant.primary,
+                        ),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      'Ask any question across any academic domain, request active recall quizzes, generate revision timetables, or analyze telemetry.',
+                      'Ask any custom question, request active recall quizzes, or configure your own model in GPT Settings.',
                       style: AppTypography.bodySmall.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -489,7 +546,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
         // Interactive "Ask Mentra" Study Chat Workspace
         MentraSection(
           title: 'Ask Mentra',
-          subtitle: 'Study Coach GPT Workspace — switch personas, test recall, break down complex concepts, or request custom roadmaps',
+          subtitle: 'Study Coach GPT Workspace — live multi-turn conversations powered by your configured GPT model',
           child: MentraCard(
             padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
@@ -559,7 +616,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Conversation Session',
+                      'Live Conversation Session',
                       style: AppTypography.labelSmall.copyWith(
                         fontWeight: FontWeight.w700,
                         color: theme.colorScheme.onSurfaceVariant,
@@ -581,7 +638,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
 
                 // Message History List
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 400),
+                  constraints: const BoxConstraints(maxHeight: 420),
                   child: ListView.builder(
                     controller: _scrollController,
                     shrinkWrap: true,
@@ -662,7 +719,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       Text(
-                        'Mentra ${_selectedPersona.label} is generating real-time response...',
+                        'Mentra GPT is generating response...',
                         style: AppTypography.labelSmall.copyWith(color: AppColors.primary),
                       ),
                     ],
@@ -681,7 +738,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
                         controller: _queryController,
                         onSubmitted: (_) => _sendQuestion(),
                         decoration: InputDecoration(
-                          hintText: 'Ask ${_selectedPersona.label} anything...',
+                          hintText: 'Ask ${_selectedPersona.label} anything (e.g. teach me, quiz me, explain math formula)...',
                           hintStyle: AppTypography.bodySmall.copyWith(
                             color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                           ),
@@ -727,7 +784,6 @@ class _AiCoachPageState extends State<AiCoachPage> {
       );
     }
 
-    // Clean formatting for coach responses
     final lines = text.split('\n');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
