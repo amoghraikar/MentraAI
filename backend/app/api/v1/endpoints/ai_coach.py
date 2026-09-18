@@ -6,6 +6,8 @@ from app.models.user import User
 from app.schemas.ai_coach import (
     AiCoachChatRequest,
     AiCoachChatResponse,
+    AiCoachConfigRequest,
+    AiCoachConfigResponse,
     AiCoachExplainRequest,
     AiCoachExplainResponse,
     AiCoachInterventionRequest,
@@ -16,10 +18,33 @@ from app.schemas.ai_coach import (
     AiCoachStudyPlanResponse,
     CoachInsightResponse,
 )
+from app.services.ai.providers import AiProviderFactory
 from app.services.ai_coach_service import AiCoachService
 
 router = APIRouter()
 ai_coach_service = AiCoachService()
+
+
+@router.get("/config", response_model=AiCoachConfigResponse, status_code=status.HTTP_200_OK)
+def get_ai_config(
+    current_user: User = Depends(get_current_user),
+) -> AiCoachConfigResponse:
+    return ai_coach_service.get_config()
+
+
+@router.post("/config", response_model=AiCoachConfigResponse, status_code=status.HTTP_200_OK)
+def update_ai_config(
+    request: AiCoachConfigRequest,
+    current_user: User = Depends(get_current_user),
+) -> AiCoachConfigResponse:
+    provider = AiProviderFactory.get_provider(
+        provider_name=request.provider,
+        api_key=request.api_key,
+        model=request.model,
+    )
+    ai_coach_service.set_provider(provider)
+    return ai_coach_service.get_config()
+
 
 
 @router.post("/chat", response_model=AiCoachChatResponse, status_code=status.HTTP_200_OK)

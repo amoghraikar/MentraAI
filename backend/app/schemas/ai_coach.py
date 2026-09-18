@@ -9,6 +9,9 @@ class AiCoachChatRequest(BaseModel):
     subject_id: Optional[str] = Field(None, description="Optional active subject identifier")
     topic_id: Optional[str] = Field(None, description="Optional active topic identifier")
     include_study_context: bool = Field(True, description="Whether to enrich prompt with user study metrics")
+    provider: Optional[str] = Field(None, description="Optional custom provider (gemini, openai, groq, etc.)")
+    api_key: Optional[str] = Field(None, description="Optional custom API key")
+    model: Optional[str] = Field(None, description="Optional custom model name")
 
 
 class AiCoachChatResponse(BaseModel):
@@ -18,6 +21,20 @@ class AiCoachChatResponse(BaseModel):
     action_suggestion: Optional[str] = None
     suggested_next_steps: List[str] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class AiCoachConfigRequest(BaseModel):
+    provider: str = Field("auto", description="auto, gemini, openai, groq, openrouter, ollama, cognitive")
+    api_key: Optional[str] = Field(None, description="API key")
+    model: Optional[str] = Field(None, description="Model identifier")
+
+
+class AiCoachConfigResponse(BaseModel):
+    active_provider: str
+    is_cloud_connected: bool
+    supported_providers: List[str]
+    model: str
+
 
 
 # --- Topic Explanation Schemas ---

@@ -31,6 +31,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
   bool _isLoading = true;
   bool _isSending = false;
   String? _errorMessage;
+  String _selectedProvider = 'Dynamic Real-Time AI';
 
   @override
   void initState() {
@@ -121,11 +122,105 @@ class _AiCoachPageState extends State<AiCoachPage> {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
+          duration: const Duration(milliseconds: 250),
           curve: Curves.easeOut,
         );
       }
     });
+  }
+
+  void _showAiConfigDialog() {
+    final keyController = TextEditingController();
+    String tempProvider = _selectedProvider;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              title: Row(
+                children: [
+                  const Icon(Icons.tune_rounded, color: AppColors.primary, size: 22),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text('AI Engine Configuration', style: AppTypography.titleMedium),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Mentra uses a real-time multi-provider AI engine. Select your preferred provider or enter your custom API key:',
+                      style: AppTypography.bodySmall,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    DropdownButtonFormField<String>(
+                      initialValue: tempProvider,
+                      decoration: const InputDecoration(
+                        labelText: 'AI Provider',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'Dynamic Real-Time AI', child: Text('Dynamic Real-Time AI (Built-in)')),
+                        DropdownMenuItem(value: 'Google Gemini', child: Text('Google Gemini (Gemini 1.5 / 2.0)')),
+                        DropdownMenuItem(value: 'OpenAI ChatGPT', child: Text('OpenAI ChatGPT (GPT-4o / Mini)')),
+                        DropdownMenuItem(value: 'Groq Cloud', child: Text('Groq Cloud (Llama 3.3 70B)')),
+                        DropdownMenuItem(value: 'OpenRouter', child: Text('OpenRouter (Multi-Model)')),
+                        DropdownMenuItem(value: 'Ollama Local', child: Text('Ollama (Local LLM)')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setModalState(() => tempProvider = val);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    if (tempProvider != 'Dynamic Real-Time AI' && tempProvider != 'Ollama Local') ...[
+                      TextField(
+                        controller: keyController,
+                        obscureText: true,
+                        decoration: InputDecoration(
+                          labelText: '$tempProvider API Key',
+                          hintText: 'Enter your personal key (optional)',
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        'Leave empty to use default environment configuration.',
+                        style: AppTypography.labelSmall.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Close'),
+                ),
+                MentraButton(
+                  label: 'Save Configuration',
+                  icon: Icons.check_rounded,
+                  onPressed: () {
+                    setState(() {
+                      _selectedProvider = tempProvider;
+                    });
+                    Navigator.of(ctx).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('AI Engine set to $_selectedProvider')),
+                    );
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -162,9 +257,21 @@ class _AiCoachPageState extends State<AiCoachPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const MentraPageHeader(
-          title: 'AI Coach',
-          subtitle: 'Personalized study patterns, behavioral coaching, and adaptive recommendations',
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              child: MentraPageHeader(
+                title: 'AI Coach',
+                subtitle: 'Real-time personalized instruction, academic breakdown, and focus guidance',
+              ),
+            ),
+            IconButton(
+              tooltip: 'Configure AI Provider & Keys',
+              icon: const Icon(Icons.settings_outlined, color: AppColors.primary),
+              onPressed: _showAiConfigDialog,
+            ),
+          ],
         ),
 
         // Personalized Coach Greeting Banner
@@ -186,16 +293,19 @@ class _AiCoachPageState extends State<AiCoachPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text('Study Coach Active', style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700)),
-                        const SizedBox(width: AppSpacing.sm),
-                        const MentraBadge(label: 'Behavioral Insights', variant: MentraBadgeVariant.primary),
+                        const MentraBadge(label: 'Real-Time AI Active', variant: MentraBadgeVariant.success),
+                        MentraBadge(label: _selectedProvider, variant: MentraBadgeVariant.primary),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      'I analyzed your completed study history. Your peak focus retention occurs during 45-minute morning sessions.',
+                      'Ask any question across any academic domain, study strategy, progress analytics, or topic deconstruction.',
                       style: AppTypography.bodySmall.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -282,7 +392,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
         // Interactive "Ask Mentra" Study Chat Workspace
         MentraSection(
           title: 'Ask Mentra',
-          subtitle: 'Ask questions about your study schedule, topic difficulty, or focus tactics',
+          subtitle: 'Real-time AI instruction — ask about any topic, concept, formula, progress analysis, or study strategy',
           child: MentraCard(
             padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
@@ -293,11 +403,17 @@ class _AiCoachPageState extends State<AiCoachPage> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
+                      _buildPromptChip('Teach me Data Analytics'),
+                      const SizedBox(width: AppSpacing.xs),
+                      _buildPromptChip('How is my progress?'),
+                      const SizedBox(width: AppSpacing.xs),
+                      _buildPromptChip('Explain OLS Regression'),
+                      const SizedBox(width: AppSpacing.xs),
                       _buildPromptChip('Optimal study interval?'),
                       const SizedBox(width: AppSpacing.xs),
                       _buildPromptChip('Active recall strategy'),
                       const SizedBox(width: AppSpacing.xs),
-                      _buildPromptChip('How to eliminate phone distraction?'),
+                      _buildPromptChip('How to beat drowsiness?'),
                     ],
                   ),
                 ),
@@ -305,7 +421,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
 
                 // Message History List
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 260),
+                  constraints: const BoxConstraints(maxHeight: 380),
                   child: ListView.builder(
                     controller: _scrollController,
                     shrinkWrap: true,
@@ -316,27 +432,68 @@ class _AiCoachPageState extends State<AiCoachPage> {
                       return Align(
                         alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
                         child: Container(
-                          margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-                          constraints: const BoxConstraints(maxWidth: 480),
+                          margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                          constraints: const BoxConstraints(maxWidth: 620),
                           decoration: BoxDecoration(
                             color: isUser
                                 ? theme.colorScheme.primary
-                                : (isDark ? const Color(0xFF222222) : const Color(0xFFF2F2F0)),
+                                : (isDark ? const Color(0xFF1E2420) : const Color(0xFFF2F5F3)),
+                            border: Border.all(
+                              color: isUser
+                                  ? theme.colorScheme.primary
+                                  : (isDark ? const Color(0xFF2A362E) : const Color(0xFFE2E8E4)),
+                            ),
                             borderRadius: AppRadius.borderMd,
                           ),
-                          child: Text(
-                            msg.text,
-                            style: AppTypography.bodySmall.copyWith(
-                              color: isUser ? Colors.white : theme.colorScheme.onSurface,
-                              height: 1.4,
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isUser ? Icons.person_outline_rounded : Icons.psychology_outlined,
+                                    size: 14,
+                                    color: isUser ? Colors.white70 : AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    isUser ? 'You' : 'Mentra Coach',
+                                    style: AppTypography.labelSmall.copyWith(
+                                      color: isUser ? Colors.white70 : AppColors.primary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: AppSpacing.xs),
+                              _buildFormattedText(msg.text, isUser, theme),
+                            ],
                           ),
                         ),
                       );
                     },
                   ),
                 ),
+
+                if (_isSending) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        'Mentra is generating real-time response...',
+                        style: AppTypography.labelSmall.copyWith(color: AppColors.primary),
+                      ),
+                    ],
+                  ),
+                ],
 
                 const SizedBox(height: AppSpacing.md),
                 Divider(color: theme.dividerColor, height: 1),
@@ -350,7 +507,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
                         controller: _queryController,
                         onSubmitted: (_) => _sendQuestion(),
                         decoration: InputDecoration(
-                          hintText: 'e.g. How should I structure my revision for Data Analytics?',
+                          hintText: 'e.g. Teach me Data Analytics, Explain ANOVA tests, How is my focus?',
                           hintStyle: AppTypography.bodySmall.copyWith(
                             color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                           ),
@@ -382,6 +539,73 @@ class _AiCoachPageState extends State<AiCoachPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildFormattedText(String text, bool isUser, ThemeData theme) {
+    if (isUser) {
+      return Text(
+        text,
+        style: AppTypography.bodySmall.copyWith(
+          color: Colors.white,
+          height: 1.45,
+        ),
+      );
+    }
+
+    // Clean formatting for coach responses
+    final lines = text.split('\n');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: lines.map((line) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) {
+          return const SizedBox(height: 6);
+        }
+        if (trimmed.startsWith('### ')) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 4),
+            child: Text(
+              trimmed.substring(4),
+              style: AppTypography.titleSmall.copyWith(
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          );
+        }
+        if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+          final bulletText = trimmed.substring(2);
+          return Padding(
+            padding: const EdgeInsets.only(left: 6, bottom: 3),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('• ', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+                Expanded(
+                  child: Text(
+                    bulletText.replaceAll('**', ''),
+                    style: AppTypography.bodySmall.copyWith(
+                      color: theme.colorScheme.onSurface,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 3),
+          child: Text(
+            trimmed.replaceAll('**', ''),
+            style: AppTypography.bodySmall.copyWith(
+              color: theme.colorScheme.onSurface,
+              height: 1.45,
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 

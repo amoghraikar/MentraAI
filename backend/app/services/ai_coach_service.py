@@ -9,6 +9,8 @@ from app.models.topic import Topic
 from app.schemas.ai_coach import (
     AiCoachChatRequest,
     AiCoachChatResponse,
+    AiCoachConfigRequest,
+    AiCoachConfigResponse,
     AiCoachExplainRequest,
     AiCoachExplainResponse,
     AiCoachInterventionRequest,
@@ -34,13 +36,34 @@ class AiCoachService:
     def __init__(self, provider: Optional[BaseAiProvider] = None):
         self.provider = provider or AiProviderFactory.get_provider()
 
+    def get_config(self) -> AiCoachConfigResponse:
+        active_name = type(self.provider).__name__.replace("Provider", "").replace("Ai", "")
+        return AiCoachConfigResponse(
+            active_provider=active_name,
+            is_cloud_connected=active_name in ("Gemini", "OpenAi", "Groq", "OpenRouter"),
+            supported_providers=["Gemini", "OpenAI", "Groq", "OpenRouter", "Ollama", "Dynamic Cognitive AI"],
+            model=getattr(self.provider, "model", "cognitive-engine-v2"),
+        )
+
+    def set_provider(self, provider: BaseAiProvider) -> None:
+        self.provider = provider
+
     async def chat(
         self,
         db: Session,
         user_id: str,
         request: AiCoachChatRequest,
     ) -> AiCoachChatResponse:
-        # 1. Build bounded context
+        # 1. Select provider (custom or default)
+        active_provider = self.provider
+        if request.provider or request.api_key or request.model:
+            active_provider = AiProviderFactory.get_provider(
+                provider_name=request.provider,
+                api_key=request.api_key,
+                model=request.model,
+            )
+
+        # 2. Build bounded context
         context_str = "General Study Context"
         if request.include_study_context:
             context = ContextBuilder.build_user_study_context(
@@ -51,10 +74,10 @@ class AiCoachService:
         prompt = (
             f"User Study Context:\n{context_str}\n\n"
             f"Student Question: {request.message}\n\n"
-            "Provide a concise, practical, and motivating answer with 1 clear action suggestion."
+            "Provide an insightful, practical, structured, and highly encouraging answer with clear actionable steps."
         )
 
-        # 2. Persist user message
+        # 3. Persist user message
         user_msg = CoachMessage(
             id=str(uuid.uuid4()),
             user_id=user_id,
@@ -64,14 +87,14 @@ class AiCoachService:
         )
         db.add(user_msg)
 
-        # 3. Generate response
-        response_text = await self.provider.generate_text(
+        # 4. Generate response
+        response_text = await active_provider.generate_text(
             prompt=prompt,
             system_prompt=COACH_SYSTEM_PROMPT,
             temperature=0.7,
         )
 
-        # 4. Persist coach response
+        # 5. Persist coach response
         coach_msg_id = str(uuid.uuid4())
         coach_msg = CoachMessage(
             id=coach_msg_id,
@@ -87,8 +110,8 @@ class AiCoachService:
             id=coach_msg_id,
             sender="coach",
             message=response_text,
-            action_suggestion="Review key formula or definition",
-            suggested_next_steps=["Complete active practice block", "Log self-reflection"],
+            action_suggestion="Review key concepts and test recall",
+            suggested_next_steps=["Complete active practice block", "Review study analytics"],
             timestamp=datetime.utcnow(),
         )
 
