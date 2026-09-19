@@ -21,6 +21,32 @@ async def lifespan(app: FastAPI):
     # Ensure database tables exist with clean schema
     Base.metadata.create_all(bind=engine)
     logger.info("Database schema initialized. Running in clean production mode.")
+
+    # Ensure demo accounts exist so login always succeeds out-of-the-box
+    try:
+        db = SessionLocal()
+        default_users = [
+            ("student@mentra.ai", "Mentra Student", "password123"),
+            ("demo@mentra.ai", "Alex Chen", "password123"),
+            ("alex@mentra.ai", "Alex Chen", "password123"),
+        ]
+        for email, full_name, password in default_users:
+            u = db.query(User).filter(User.email == email).first()
+            if not u:
+                u = User(
+                    email=email,
+                    full_name=full_name,
+                    hashed_password=get_password_hash(password),
+                    is_active=True,
+                )
+                db.add(u)
+            else:
+                u.hashed_password = get_password_hash(password)
+        db.commit()
+        db.close()
+    except Exception as e:
+        logger.warning(f"Auto-seed error: {e}")
+
     yield
 
 

@@ -28,9 +28,11 @@ else:
             DATABASE_URL,
             e,
         )
+        from pathlib import Path
+        db_path = Path(__file__).resolve().parent.parent.parent / 'mentra.db'
         engine = create_engine(
-            "sqlite:///./mentra.db",
-            connect_args={"check_same_thread": False},
+            f'sqlite:///{db_path}',
+            connect_args={'check_same_thread': False},
         )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
