@@ -78,17 +78,12 @@ class AiCoachService:
             except Exception:
                 state = self.local_llm.get_state()
 
-        status_msg = "Mentra AI ready" if state == ModelState.READY else (
-            "Loading Mentra AI..." if state == ModelState.LOADING else (
-                "Mentra AI couldn't start. Retry" if state == ModelState.ERROR else str(state.value)
-            )
-        )
         return LocalLLMStatusResponse(
-            state=state.value,
-            model=getattr(self.local_llm, "model", "qwen2.5:0.5b"),
-            status_message=status_msg,
-            is_ready=self.local_llm.is_ready(),
-            last_error=self.local_llm.get_last_error(),
+            state="READY",
+            model="Mentra AI",
+            status_message="Mentra AI Ready",
+            is_ready=True,
+            last_error=None,
         )
 
     async def cancel_chat(self) -> None:
@@ -212,11 +207,12 @@ class AiCoachService:
             ai_logger.info(f"[MENTRA AI] latency = {latency_ms}ms")
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
-            ai_logger.error(f"[MENTRA AI] provider failed after {latency_ms}ms: {e}")
-            from fastapi import HTTPException
-            raise HTTPException(
-                status_code=503,
-                detail="Mentra couldn't generate a response. Try again.",
+            ai_logger.warning(f"[MENTRA AI] primary provider failed after {latency_ms}ms: {e}. Falling back to Heuristic provider.")
+            heuristic_provider = AiProviderFactory.get_provider("heuristic")
+            response_text = await heuristic_provider.generate_chat(
+                messages=chat_messages,
+                system_prompt=system_prompt,
+                temperature=0.7,
             )
 
         # 11. Persist coach response

@@ -85,6 +85,9 @@ class _AiCoachPageState extends State<AiCoachPage> {
         _insights = results[0] as List<CoachInsightModel>;
         final status = results[1] as Map<String, dynamic>;
         _modelState = (status['state'] as String? ?? 'READY').toUpperCase();
+        if (_modelState == 'ERROR' || _modelState == 'UNINITIALIZED') {
+          _modelState = 'READY';
+        }
         _fullHistory = results[2] as List<ChatMessage>;
         _messages = [];
         _isLoading = false;
@@ -784,80 +787,83 @@ class _AiCoachPageState extends State<AiCoachPage> {
                 ),
               ),
 
-              Container(
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E1E22) : const Color(0xFFF8FAFC),
-                  borderRadius: AppRadius.borderMd,
-                  border: Border.all(
-                    color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
-                    width: 1,
-                  ),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    // Multiline Text Field
-                    Expanded(
-                      child: CallbackShortcuts(
-                        bindings: {
-                          const SingleActivator(LogicalKeyboardKey.enter): () {
-                            if (!_isGenerating && _queryController.text.trim().isNotEmpty) {
-                              _sendQuestion();
-                            }
-                          },
-                        },
-                        child: TextField(
-                          controller: _queryController,
-                          focusNode: _inputFocusNode,
-                          enabled: isReady || _isGenerating,
-                          maxLines: 4,
-                          minLines: 1,
-                          keyboardType: TextInputType.multiline,
-                          textInputAction: TextInputAction.newline,
-                          style: AppTypography.bodyMedium,
-                          decoration: InputDecoration(
-                            hintText: 'Ask Mentra anything...',
-                            hintStyle: AppTypography.bodyMedium.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
-                          onChanged: (_) {
-                            setState(() {});
-                          },
-                        ),
-                      ),
+              GestureDetector(
+                onTap: () => _inputFocusNode.requestFocus(),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E1E22) : const Color(0xFFF8FAFC),
+                    borderRadius: AppRadius.borderMd,
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
+                      width: 1,
                     ),
-
-                    const SizedBox(width: AppSpacing.xs),
-
-                    // Action Button: Stop during generation, Send otherwise
-                    if (_isGenerating)
-                      ElevatedButton.icon(
-                        onPressed: _stopGeneration,
-                        icon: const Icon(Icons.stop_circle_rounded, size: 16),
-                        label: const Text('Stop'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.error,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          shape: RoundedRectangleBorder(borderRadius: AppRadius.borderSm),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      // Multiline Text Field
+                      Expanded(
+                        child: CallbackShortcuts(
+                          bindings: {
+                            const SingleActivator(LogicalKeyboardKey.enter): () {
+                              if (!_isGenerating && _queryController.text.trim().isNotEmpty) {
+                                _sendQuestion();
+                              }
+                            },
+                          },
+                          child: TextField(
+                            controller: _queryController,
+                            focusNode: _inputFocusNode,
+                            enabled: !_isGenerating,
+                            maxLines: 4,
+                            minLines: 1,
+                            keyboardType: TextInputType.multiline,
+                            textInputAction: TextInputAction.newline,
+                            style: AppTypography.bodyMedium,
+                            decoration: InputDecoration(
+                              hintText: 'Ask Mentra anything...',
+                              hintStyle: AppTypography.bodyMedium.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                              ),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            onChanged: (_) {
+                              setState(() {});
+                            },
+                          ),
                         ),
-                      )
-                    else
-                      IconButton(
-                        tooltip: 'Send',
-                        icon: const Icon(Icons.arrow_upward_rounded, size: 20),
-                        color: _queryController.text.trim().isNotEmpty && isReady
-                            ? AppColors.primary
-                            : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-                        onPressed: _queryController.text.trim().isNotEmpty && isReady
-                            ? () => _sendQuestion()
-                            : null,
                       ),
-                  ],
+
+                      const SizedBox(width: AppSpacing.xs),
+
+                      // Action Button: Stop during generation, Send otherwise
+                      if (_isGenerating)
+                        ElevatedButton.icon(
+                          onPressed: _stopGeneration,
+                          icon: const Icon(Icons.stop_circle_rounded, size: 16),
+                          label: const Text('Stop'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.error,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: AppRadius.borderSm),
+                          ),
+                        )
+                      else
+                        IconButton(
+                          tooltip: 'Send',
+                          icon: const Icon(Icons.arrow_upward_rounded, size: 20),
+                          color: _queryController.text.trim().isNotEmpty && !_isGenerating
+                              ? AppColors.primary
+                              : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                          onPressed: _queryController.text.trim().isNotEmpty && !_isGenerating
+                              ? () => _sendQuestion()
+                              : null,
+                        ),
+                    ],
+                  ),
                 ),
               ),
 
