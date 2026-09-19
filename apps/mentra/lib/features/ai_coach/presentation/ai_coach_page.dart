@@ -29,7 +29,6 @@ class _AiCoachPageState extends State<AiCoachPage> {
   final ScrollController _scrollController = ScrollController();
   final FocusNode _inputFocusNode = FocusNode();
 
-  List<CoachInsightModel> _insights = [];
   List<ChatMessage> _messages = [];
   List<ChatMessage> _fullHistory = [];
 
@@ -38,18 +37,16 @@ class _AiCoachPageState extends State<AiCoachPage> {
   String? _errorMessage;
 
   // Local Canonical Model State
-  String _modelState = 'READY'; // READY, GENERATING, STOPPING, ERROR
+  String _modelState = 'READY'; // UNINITIALIZED, LOADING, READY, GENERATING, STOPPING, ERROR
   String _currentStreamBuffer = '';
   StreamSubscription<String>? _activeStreamSubscription;
 
-  // Starter prompts
+  // 4 Starter actions matching Milestone 3
   static const List<String> _starterPrompts = [
     'Explain a topic',
     'Quiz me',
     'Help me understand',
     'Practice',
-    'Optimal study interval?',
-    'Active recall strategy',
   ];
 
   @override
@@ -74,21 +71,18 @@ class _AiCoachPageState extends State<AiCoachPage> {
     });
 
     try {
-      final insightsFuture = widget.aiCoachRepository.getCoachInsights();
       final statusFuture = widget.aiCoachRepository.getModelStatus();
       final historyFuture = widget.aiCoachRepository.getInitialChatHistory();
 
-      final results = await Future.wait([insightsFuture, statusFuture, historyFuture]);
+      final results = await Future.wait([statusFuture, historyFuture]);
 
       if (!mounted) return;
+      final status = results[0] as Map<String, dynamic>;
+      final rawState = (status['state'] as String? ?? 'READY').toUpperCase();
+
       setState(() {
-        _insights = results[0] as List<CoachInsightModel>;
-        final status = results[1] as Map<String, dynamic>;
-        _modelState = (status['state'] as String? ?? 'READY').toUpperCase();
-        if (_modelState == 'ERROR' || _modelState == 'UNINITIALIZED') {
-          _modelState = 'READY';
-        }
-        _fullHistory = results[2] as List<ChatMessage>;
+        _modelState = rawState;
+        _fullHistory = results[1] as List<ChatMessage>;
         _messages = [];
         _isLoading = false;
       });
@@ -96,7 +90,8 @@ class _AiCoachPageState extends State<AiCoachPage> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Mentra AI is currently unavailable. Tap retry to reconnect.';
+        _modelState = 'ERROR';
+        _errorMessage = "Mentra AI is currently unavailable. Tap retry to reconnect.";
       });
     }
   }
@@ -122,6 +117,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
       _isGenerating = true;
       _modelState = 'GENERATING';
       _currentStreamBuffer = '';
+      _errorMessage = null;
     });
 
     _scrollToBottom();
@@ -171,7 +167,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
               _messages[idx] = ChatMessage(
                 id: coachMsgId,
                 sender: 'coach',
-                text: 'Mentra couldn\'t generate a response. Please try again.',
+                text: "Mentra couldn't generate a response. Try again.",
                 timestamp: DateTime.now(),
               );
             }
@@ -201,7 +197,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
           _messages[idx] = ChatMessage(
             id: coachMsgId,
             sender: 'coach',
-            text: 'Mentra couldn\'t generate a response. Please try again.',
+            text: "Mentra couldn't generate a response. Try again.",
             timestamp: DateTime.now(),
           );
         }
@@ -239,6 +235,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
       _isGenerating = false;
       _modelState = 'READY';
       _currentStreamBuffer = '';
+      _errorMessage = null;
     });
     _queryController.clear();
     _inputFocusNode.requestFocus();
@@ -292,7 +289,9 @@ class _AiCoachPageState extends State<AiCoachPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const CircularProgressIndicator(color: AppColors.primary),
+              const MentraAiAvatar(size: 48, isGenerating: true),
+              const SizedBox(height: AppSpacing.lg),
+              const CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
               const SizedBox(height: AppSpacing.lg),
               Text(
                 'Preparing your study coach...',
@@ -322,12 +321,12 @@ class _AiCoachPageState extends State<AiCoachPage> {
           color: theme.scaffoldBackgroundColor,
           child: Column(
             children: [
-              // App Header Bar
+              // Header Bar
               _buildHeaderBar(theme, isDark, isMobile),
 
               if (_errorMessage != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 8),
                   color: AppColors.error.withValues(alpha: 0.1),
                   child: Row(
                     children: [
@@ -349,13 +348,13 @@ class _AiCoachPageState extends State<AiCoachPage> {
 
               const Divider(height: 1),
 
-              // Main Conversation or Empty State Area
+              // Conversation View or Empty State
               if (isBounded)
                 Expanded(child: conversationContent)
               else
                 conversationContent,
 
-              // Bottom Input Composer
+              // Bottom Composer
               _buildComposer(theme, isDark, isMobile),
             ],
           ),
@@ -365,6 +364,30 @@ class _AiCoachPageState extends State<AiCoachPage> {
   }
 
   Widget _buildHeaderBar(ThemeData theme, bool isDark, bool isMobile) {
+    String badgeLabel;
+    MentraBadgeVariant badgeVariant;
+
+    switch (_modelState) {
+      case 'LOADING':
+      case 'UNINITIALIZED':
+        badgeLabel = 'Preparing Mentra...';
+        badgeVariant = MentraBadgeVariant.neutral;
+        break;
+      case 'ERROR':
+        badgeLabel = "Mentra AI couldn't start";
+        badgeVariant = MentraBadgeVariant.danger;
+        break;
+      case 'GENERATING':
+        badgeLabel = 'Thinking...';
+        badgeVariant = MentraBadgeVariant.primary;
+        break;
+      case 'READY':
+      default:
+        badgeLabel = 'Mentra AI ready';
+        badgeVariant = MentraBadgeVariant.success;
+        break;
+    }
+
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: isMobile ? AppSpacing.md : AppSpacing.lg,
@@ -374,7 +397,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Brand & Title
+          // Brand Title
           Expanded(
             child: Row(
               children: [
@@ -385,25 +408,12 @@ class _AiCoachPageState extends State<AiCoachPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'MENTRA',
-                            style: AppTypography.titleMedium.copyWith(
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.0,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.xs),
-                          Text(
-                            'AI Coach',
-                            style: AppTypography.labelSmall.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
+                      Text(
+                        'MENTRA',
+                        style: AppTypography.titleMedium.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.0,
+                        ),
                       ),
                       Text(
                         'Your personal AI study coach',
@@ -420,13 +430,13 @@ class _AiCoachPageState extends State<AiCoachPage> {
             ),
           ),
 
-          // Actions: Status, History, New Chat
+          // Actions
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const MentraBadge(
-                label: 'Study Coach Active',
-                variant: MentraBadgeVariant.success,
+              MentraBadge(
+                label: badgeLabel,
+                variant: badgeVariant,
               ),
               const SizedBox(width: AppSpacing.xs),
               IconButton(
@@ -442,7 +452,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   textStyle: AppTypography.labelMedium.copyWith(fontWeight: FontWeight.w600),
                   shape: RoundedRectangleBorder(borderRadius: AppRadius.borderSm),
                 ),
@@ -462,9 +472,9 @@ class _AiCoachPageState extends State<AiCoachPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.xxl),
 
-            // Mentra Brand Avatar
+            // Mentra Identity Avatar
             const MentraAiAvatar(size: 64),
             const SizedBox(height: AppSpacing.lg),
 
@@ -487,7 +497,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
 
             const SizedBox(height: AppSpacing.xl),
 
-            // Starter Prompts Grid
+            // 4 Starter Action Prompts
             Wrap(
               spacing: AppSpacing.sm,
               runSpacing: AppSpacing.sm,
@@ -496,12 +506,12 @@ class _AiCoachPageState extends State<AiCoachPage> {
                 return ActionChip(
                   label: Text(
                     prompt,
-                    style: AppTypography.bodySmall.copyWith(
+                    style: AppTypography.bodyMedium.copyWith(
                       fontWeight: FontWeight.w600,
                       color: theme.colorScheme.onSurface,
                     ),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   backgroundColor: isDark ? const Color(0xFF1E1E22) : const Color(0xFFF1F5F9),
                   side: BorderSide(
                     color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
@@ -512,74 +522,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
               }).toList(),
             ),
 
-            // Insights Summary
-            if (_insights.isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.xl),
-              Container(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF161618) : const Color(0xFFF8FAFC),
-                  borderRadius: AppRadius.borderMd,
-                  border: Border.all(
-                    color: isDark ? const Color(0xFF27272A) : const Color(0xFFE2E8F0),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.insights_rounded, size: 16, color: AppColors.primary),
-                        const SizedBox(width: AppSpacing.xs),
-                        Text(
-                          'Focus Recommendations',
-                          style: AppTypography.titleSmall.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    ..._insights.take(2).map((ins) {
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Padding(
-                              padding: EdgeInsets.only(top: 4, right: 6),
-                              child: Icon(Icons.circle, size: 4, color: AppColors.primary),
-                            ),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    ins.title,
-                                    style: AppTypography.bodySmall.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      color: theme.colorScheme.onSurface,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    ins.actionRecommendation,
-                                    style: AppTypography.bodySmall.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.xxl),
           ],
         ),
       ),
@@ -751,7 +694,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
   }
 
   Widget _buildComposer(ThemeData theme, bool isDark, bool isMobile) {
-    final isReady = _modelState == 'READY' && !_isLoading;
+    final canSend = _queryController.text.trim().isNotEmpty && !_isGenerating && !_isLoading;
 
     return Container(
       padding: EdgeInsets.symmetric(
@@ -771,22 +714,6 @@ class _AiCoachPageState extends State<AiCoachPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Prompt Label Header
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6, left: 2),
-                child: Row(
-                  children: [
-                    Text(
-                      'Ask Mentra',
-                      style: AppTypography.labelSmall.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
               GestureDetector(
                 onTap: () => _inputFocusNode.requestFocus(),
                 child: Container(
@@ -802,7 +729,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      // Multiline Text Field
+                      // Multiline Text Field (Enter to send, Shift+Enter for newline)
                       Expanded(
                         child: CallbackShortcuts(
                           bindings: {
@@ -815,8 +742,8 @@ class _AiCoachPageState extends State<AiCoachPage> {
                           child: TextField(
                             controller: _queryController,
                             focusNode: _inputFocusNode,
-                            enabled: !_isGenerating,
-                            maxLines: 4,
+                            enabled: !_isGenerating && !_isLoading,
+                            maxLines: 5,
                             minLines: 1,
                             keyboardType: TextInputType.multiline,
                             textInputAction: TextInputAction.newline,
@@ -855,18 +782,15 @@ class _AiCoachPageState extends State<AiCoachPage> {
                         IconButton(
                           tooltip: 'Send',
                           icon: const Icon(Icons.arrow_upward_rounded, size: 20),
-                          color: _queryController.text.trim().isNotEmpty && !_isGenerating
+                          color: canSend
                               ? AppColors.primary
                               : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-                          onPressed: _queryController.text.trim().isNotEmpty && !_isGenerating
-                              ? () => _sendQuestion()
-                              : null,
+                          onPressed: canSend ? () => _sendQuestion() : null,
                         ),
                     ],
                   ),
                 ),
               ),
-
               const SizedBox(height: 4),
               Center(
                 child: Text(

@@ -45,6 +45,7 @@ class FocusObservation {
     this.distractionType,
     this.phoneDetected = false,
     this.phoneConfidence = 0.0,
+    this.phoneAvailable = false,
     this.ear,
     this.yaw,
     this.pitch,
@@ -63,6 +64,7 @@ class FocusObservation {
   final String? distractionType;
   final bool phoneDetected;
   final double phoneConfidence;
+  final bool phoneAvailable;
   final double? ear;
   final double? yaw;
   final double? pitch;
@@ -192,6 +194,7 @@ class RealTimeCvTelemetry {
     required this.rightEar,
     required this.phoneDetected,
     required this.phoneConfidence,
+    this.phoneAvailable = false,
     required this.orientation,
     required this.focusState,
     required this.fps,
@@ -212,6 +215,7 @@ class RealTimeCvTelemetry {
   final double rightEar;
   final bool phoneDetected;
   final double phoneConfidence;
+  final bool phoneAvailable;
   final String orientation;
   final String focusState;
   final int fps; // Measured processing frames per second
@@ -232,6 +236,7 @@ class RealTimeCvTelemetry {
         rightEar: 0.0,
         phoneDetected: false,
         phoneConfidence: 0.0,
+        phoneAvailable: false,
         orientation: 'UNKNOWN',
         focusState: 'UNINITIALIZED',
         fps: 0,
@@ -258,6 +263,7 @@ class RealTimeCvTelemetry {
         rightEar: 0.28,
         phoneDetected: false,
         phoneConfidence: 0.0,
+        phoneAvailable: false,
         orientation: 'NORMAL_FORWARD',
         focusState: 'FOCUSED',
         fps: 30,

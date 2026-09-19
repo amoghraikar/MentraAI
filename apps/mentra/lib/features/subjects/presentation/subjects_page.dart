@@ -40,12 +40,19 @@ class _SubjectsPageState extends State<SubjectsPage> {
   }
 
   Future<void> _loadSubjects() async {
-    final list = await widget.subjectRepository.getSubjects();
-    if (!mounted) return;
-    setState(() {
-      _subjects = list;
-      _isLoading = false;
-    });
+    try {
+      final list = await widget.subjectRepository.getSubjects();
+      if (!mounted) return;
+      setState(() {
+        _subjects = list;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   void _showNewSubjectDialog() async {
@@ -132,12 +139,32 @@ class _SubjectsPageState extends State<SubjectsPage> {
     );
 
     if (result == true && titleCtrl.text.trim().isNotEmpty) {
-      await widget.subjectRepository.createSubject(
-        title: titleCtrl.text.trim(),
-        code: codeCtrl.text.trim().isNotEmpty ? codeCtrl.text.trim().toUpperCase() : 'GEN-100',
-        description: descCtrl.text.trim().isNotEmpty ? descCtrl.text.trim() : 'Active coursework unit.',
-        colorHex: selectedColor,
-      );
+      try {
+        await widget.subjectRepository.createSubject(
+          title: titleCtrl.text.trim(),
+          code: codeCtrl.text.trim().isNotEmpty ? codeCtrl.text.trim().toUpperCase() : 'GEN-100',
+          description: descCtrl.text.trim().isNotEmpty ? descCtrl.text.trim() : 'Active coursework unit.',
+          colorHex: selectedColor,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Subject "${titleCtrl.text.trim()}" created successfully!'),
+              backgroundColor: Colors.green.shade700,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not create subject: $e'),
+              backgroundColor: Colors.red.shade700,
+            ),
+          );
+        }
+      }
       _loadSubjects();
     }
   }

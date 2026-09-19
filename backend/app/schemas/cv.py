@@ -55,6 +55,7 @@ class CvFrameResponse(BaseModel):
     phone_detected: bool
     phone_confidence: float
     phone_bounding_box: Optional[List[float]] = None
+    phone_available: bool = False
     focus_state: str
     alert: Optional[CvAlert] = None
     session_metrics: CvSessionMetrics

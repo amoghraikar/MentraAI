@@ -245,6 +245,7 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
           statusMsg = 'AWAY FROM STUDY VIEW';
         }
 
+        final phoneAvailable = data['phone_available'] as bool? ?? false;
         final attentionScore = focusState == 'FOCUSED' ? 0.95 : (isFaceDetected ? 0.35 : 0.0);
 
         final telemetry = RealTimeCvTelemetry(
@@ -261,6 +262,7 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
           rightEar: rightEar,
           phoneDetected: phoneDetected,
           phoneConfidence: phoneConfidence,
+          phoneAvailable: phoneAvailable,
           orientation: orientation,
           focusState: focusState,
           fps: engineFps > 0 ? engineFps : _clientFps,
@@ -269,6 +271,30 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
         );
 
         widget.onTelemetry?.call(telemetry);
+      } else if (mounted) {
+        widget.onTelemetry?.call(
+          RealTimeCvTelemetry(
+            isFaceDetected: false,
+            confidence: 0.0,
+            box: const Rect.fromLTWH(0.25, 0.20, 0.50, 0.55),
+            landmarks: const [],
+            yaw: 0.0,
+            pitch: 0.0,
+            roll: 0.0,
+            attentionScore: 0.0,
+            ear: 0.0,
+            leftEar: 0.0,
+            rightEar: 0.0,
+            phoneDetected: false,
+            phoneConfidence: 0.0,
+            phoneAvailable: false,
+            orientation: 'UNKNOWN',
+            focusState: 'CV_UNAVAILABLE',
+            fps: 0,
+            latencyMs: 0.0,
+            statusMessage: 'CV ENGINE UNAVAILABLE (${response.status})',
+          ),
+        );
       }
     } catch (_) {
       // Non-fatal frame transmission failure

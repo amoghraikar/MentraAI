@@ -47,12 +47,19 @@ class _SubjectWorkspacePageState extends State<SubjectWorkspacePage> {
   }
 
   Future<void> _loadSubject() async {
-    final sub = await widget.subjectRepository.getSubjectById(widget.subjectId);
-    if (!mounted) return;
-    setState(() {
-      _subject = sub;
-      _isLoading = false;
-    });
+    try {
+      final sub = await widget.subjectRepository.getSubjectById(widget.subjectId);
+      if (!mounted) return;
+      setState(() {
+        _subject = sub;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   void _showAddTopicDialog() async {

@@ -12,18 +12,27 @@ class SecureTokenStorage implements ITokenStorage {
 
   final FlutterSecureStorage _storage;
   static const _tokenKey = 'mentra_auth_token';
+  static String? _inMemoryTokenCache;
 
   @override
   Future<String?> getToken() async {
+    if (_inMemoryTokenCache != null && _inMemoryTokenCache!.isNotEmpty) {
+      return _inMemoryTokenCache;
+    }
     try {
-      return await _storage.read(key: _tokenKey);
+      final token = await _storage.read(key: _tokenKey);
+      if (token != null && token.isNotEmpty) {
+        _inMemoryTokenCache = token;
+      }
+      return token;
     } catch (_) {
-      return null;
+      return _inMemoryTokenCache;
     }
   }
 
   @override
   Future<void> saveToken(String token) async {
+    _inMemoryTokenCache = token;
     try {
       await _storage.write(key: _tokenKey, value: token);
     } catch (_) {}
@@ -31,6 +40,7 @@ class SecureTokenStorage implements ITokenStorage {
 
   @override
   Future<void> clearToken() async {
+    _inMemoryTokenCache = null;
     try {
       await _storage.delete(key: _tokenKey);
     } catch (_) {}

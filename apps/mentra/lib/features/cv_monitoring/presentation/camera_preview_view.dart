@@ -63,63 +63,74 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
 
       final now = DateTime.now();
       FocusObservation obs;
+      final bool eyesClosed = newTelemetry.ear < 0.20;
 
       if (!newTelemetry.isFaceDetected) {
         obs = FocusObservation(
           timestamp: now,
           isFaceDetected: false,
           faceConfidence: 0.0,
+          eyeState: EyeState.uncertain,
+          eyeOpenProbability: 0.0,
           ear: newTelemetry.ear,
           yaw: newTelemetry.yaw,
           pitch: newTelemetry.pitch,
           roll: newTelemetry.roll,
+          phoneAvailable: newTelemetry.phoneAvailable,
           focusState: 'FACE_NOT_DETECTED',
         );
-      } else if (newTelemetry.phoneDetected) {
+      } else if (newTelemetry.phoneDetected && newTelemetry.phoneAvailable) {
         // Real Phone Detected by local YOLO
         obs = FocusObservation(
           timestamp: now,
           isFaceDetected: true,
           faceBoundingBox: newTelemetry.box,
           faceConfidence: newTelemetry.confidence,
-          eyeState: EyeState.open,
+          eyeState: eyesClosed ? EyeState.closed : EyeState.open,
+          eyeOpenProbability: (newTelemetry.ear / 0.30).clamp(0.0, 1.0),
           isDistractionDetected: true,
           distractionConfidence: newTelemetry.phoneConfidence,
           distractionType: 'phone',
           phoneDetected: true,
           phoneConfidence: newTelemetry.phoneConfidence,
+          phoneAvailable: true,
           ear: newTelemetry.ear,
           yaw: newTelemetry.yaw,
           pitch: newTelemetry.pitch,
           roll: newTelemetry.roll,
           focusState: 'PHONE_DETECTED',
         );
-      } else if (newTelemetry.focusState == 'POSSIBLE_DROWSINESS' || newTelemetry.ear < 0.20) {
-        // Real eye closure / drowsiness detected from real landmarks
+      } else if (newTelemetry.focusState == 'POSSIBLE_DROWSINESS' || eyesClosed) {
+        // Real eye closure measured via Soukupova-Cech EAR
         obs = FocusObservation(
           timestamp: now,
           isFaceDetected: true,
           faceBoundingBox: newTelemetry.box,
           faceConfidence: newTelemetry.confidence,
           eyeState: EyeState.closed,
-          eyeOpenProbability: 0.05,
+          eyeOpenProbability: (newTelemetry.ear / 0.30).clamp(0.0, 1.0),
+          phoneAvailable: newTelemetry.phoneAvailable,
           ear: newTelemetry.ear,
           yaw: newTelemetry.yaw,
           pitch: newTelemetry.pitch,
           roll: newTelemetry.roll,
-          focusState: 'POSSIBLE_DROWSINESS',
+          focusState: newTelemetry.focusState == 'POSSIBLE_DROWSINESS'
+              ? 'POSSIBLE_DROWSINESS'
+              : 'EYES_CLOSED',
         );
       } else if (newTelemetry.orientation == 'LOOKING_AWAY' || newTelemetry.orientation == 'LOOKING_DOWN') {
-        // Real head turned away or pitched downward
+        // Real head turned away or pitched downward measured by solvePnP
         obs = FocusObservation(
           timestamp: now,
           isFaceDetected: true,
           faceBoundingBox: newTelemetry.box,
           faceConfidence: newTelemetry.confidence,
           eyeState: EyeState.open,
+          eyeOpenProbability: (newTelemetry.ear / 0.30).clamp(0.0, 1.0),
           isDistractionDetected: true,
           distractionConfidence: 0.90,
           distractionType: newTelemetry.orientation == 'LOOKING_DOWN' ? 'looking_down' : 'looking_away',
+          phoneAvailable: newTelemetry.phoneAvailable,
           ear: newTelemetry.ear,
           yaw: newTelemetry.yaw,
           pitch: newTelemetry.pitch,
@@ -127,14 +138,15 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
           focusState: newTelemetry.orientation,
         );
       } else {
-        // Real focused state
+        // Real normal forward focus state
         obs = FocusObservation(
           timestamp: now,
           isFaceDetected: true,
           faceBoundingBox: newTelemetry.box,
           faceConfidence: newTelemetry.confidence,
           eyeState: EyeState.open,
-          eyeOpenProbability: 0.95,
+          eyeOpenProbability: (newTelemetry.ear / 0.30).clamp(0.0, 1.0),
+          phoneAvailable: newTelemetry.phoneAvailable,
           ear: newTelemetry.ear,
           yaw: newTelemetry.yaw,
           pitch: newTelemetry.pitch,
@@ -518,9 +530,11 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
           _buildDiagRow('Orientation', _telemetry.orientation),
           _buildDiagRow(
             'Phone Detection',
-            _telemetry.phoneDetected
-                ? 'DETECTED (${(_telemetry.phoneConfidence * 100).toInt()}% conf)'
-                : 'NOT DETECTED (YOLOv8 Class 67)',
+            !_telemetry.phoneAvailable
+                ? 'UNAVAILABLE (Weights not local)'
+                : (_telemetry.phoneDetected
+                    ? 'DETECTED (${(_telemetry.phoneConfidence * 100).toInt()}% conf)'
+                    : 'NOT DETECTED (YOLOv8 Class 67)'),
             color: _telemetry.phoneDetected ? Colors.redAccent : Colors.white70,
           ),
           _buildDiagRow(

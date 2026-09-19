@@ -93,18 +93,18 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Greeting Banner
-      expect(find.text('AI Coach'), findsOneWidget);
-      expect(find.text('Study Coach Active'), findsOneWidget);
+      // Header & Branding
+      expect(find.text('MENTRA'), findsWidgets);
+      expect(find.text('Your personal AI study coach'), findsOneWidget);
+      expect(find.text('New Chat'), findsOneWidget);
 
-      // Insights
-      expect(find.text('Optimal Focus Block Duration'), findsOneWidget);
-      expect(find.text('Phone Distraction Suppression'), findsOneWidget);
-
-      // Chat Section & Prompt Chips
-      expect(find.text('Ask Mentra'), findsOneWidget);
-      expect(find.text('Optimal study interval?'), findsOneWidget);
-      expect(find.text('Active recall strategy'), findsOneWidget);
+      // Empty State & Starter Action Prompts
+      expect(find.text('Learn something today.'), findsOneWidget);
+      expect(find.text('Ask Mentra anything about your studies.'), findsOneWidget);
+      expect(find.text('Explain a topic'), findsOneWidget);
+      expect(find.text('Quiz me'), findsOneWidget);
+      expect(find.text('Help me understand'), findsOneWidget);
+      expect(find.text('Practice'), findsOneWidget);
     });
 
     testWidgets('SessionSummaryPage displays AI Coach Reflection analysis', (tester) async {

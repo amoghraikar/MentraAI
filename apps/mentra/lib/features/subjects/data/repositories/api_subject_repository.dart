@@ -7,21 +7,50 @@ class ApiSubjectRepository implements SubjectRepository {
   ApiSubjectRepository({required this.apiClient});
 
   final ApiClient apiClient;
+  final List<SubjectModel> _localCache = [];
 
   @override
   Future<List<SubjectModel>> getSubjects() async {
-    final response = await apiClient.get('/api/v1/subjects');
-    final list = response as List<dynamic>;
-    return list.map((json) => _subjectFromJson(json as Map<String, dynamic>)).toList();
+    try {
+      final response = await apiClient.get('/api/v1/subjects');
+      final list = response as List<dynamic>;
+      final parsed = list.map((json) => _subjectFromJson(json as Map<String, dynamic>)).toList();
+      _localCache.clear();
+      _localCache.addAll(parsed);
+      return parsed;
+    } on ApiException {
+      if (_localCache.isNotEmpty) {
+        return List.unmodifiable(_localCache);
+      }
+      rethrow;
+    } catch (_) {
+      if (_localCache.isNotEmpty) {
+        return List.unmodifiable(_localCache);
+      }
+      rethrow;
+    }
   }
 
   @override
   Future<SubjectModel?> getSubjectById(String id) async {
     try {
       final response = await apiClient.get('/api/v1/subjects/$id');
-      return _subjectFromJson(response as Map<String, dynamic>);
+      final sub = _subjectFromJson(response as Map<String, dynamic>);
+      final idx = _localCache.indexWhere((s) => s.id == id);
+      if (idx != -1) {
+        _localCache[idx] = sub;
+      } else {
+        _localCache.add(sub);
+      }
+      return sub;
     } on ApiException catch (e) {
       if (e.statusCode == 404) return null;
+      final cached = _localCache.where((s) => s.id == id).firstOrNull;
+      if (cached != null) return cached;
+      rethrow;
+    } catch (_) {
+      final cached = _localCache.where((s) => s.id == id).firstOrNull;
+      if (cached != null) return cached;
       rethrow;
     }
   }
@@ -33,40 +62,71 @@ class ApiSubjectRepository implements SubjectRepository {
     required String description,
     required String colorHex,
   }) async {
-    final response = await apiClient.post(
-      '/api/v1/subjects',
-      body: {
-        'title': title,
-        'code': code,
-        'description': description,
-        'color_hex': colorHex,
-        'total_hours': 0.0,
-        'target_hours': 20.0,
-      },
-    );
-    return _subjectFromJson(response as Map<String, dynamic>);
+    try {
+      final response = await apiClient.post(
+        '/api/v1/subjects',
+        body: {
+          'title': title,
+          'code': code,
+          'description': description,
+          'color_hex': colorHex,
+          'total_hours': 0.0,
+          'target_hours': 20.0,
+        },
+      );
+      final created = _subjectFromJson(response as Map<String, dynamic>);
+      _localCache.insert(0, created);
+      return created;
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      final fallback = SubjectModel(
+        id: 'sub_local_${DateTime.now().millisecondsSinceEpoch}',
+        title: title,
+        code: code,
+        description: description,
+        colorHex: colorHex,
+        totalHours: 0.0,
+        targetHours: 20.0,
+        topics: [],
+      );
+      _localCache.insert(0, fallback);
+      return fallback;
+    }
   }
 
   @override
   Future<SubjectModel> updateSubject(SubjectModel subject) async {
-    final response = await apiClient.put(
-      '/api/v1/subjects/${subject.id}',
-      body: {
-        'title': subject.title,
-        'code': subject.code,
-        'description': subject.description,
-        'color_hex': subject.colorHex,
-        'total_hours': subject.totalHours,
-        'target_hours': subject.targetHours,
-      },
-    );
-    final updated = _subjectFromJson(response as Map<String, dynamic>);
-    return updated.copyWith(topics: subject.topics);
+    try {
+      final response = await apiClient.put(
+        '/api/v1/subjects/${subject.id}',
+        body: {
+          'title': subject.title,
+          'code': subject.code,
+          'description': subject.description,
+          'color_hex': subject.colorHex,
+          'total_hours': subject.totalHours,
+          'target_hours': subject.targetHours,
+        },
+      );
+      final updated = _subjectFromJson(response as Map<String, dynamic>);
+      final res = updated.copyWith(topics: subject.topics);
+      final idx = _localCache.indexWhere((s) => s.id == subject.id);
+      if (idx != -1) _localCache[idx] = res;
+      return res;
+    } catch (_) {
+      final idx = _localCache.indexWhere((s) => s.id == subject.id);
+      if (idx != -1) _localCache[idx] = subject;
+      return subject;
+    }
   }
 
   @override
   Future<void> deleteSubject(String id) async {
-    await apiClient.delete('/api/v1/subjects/$id');
+    _localCache.removeWhere((s) => s.id == id);
+    try {
+      await apiClient.delete('/api/v1/subjects/$id');
+    } catch (_) {}
   }
 
   @override

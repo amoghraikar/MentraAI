@@ -26,12 +26,31 @@ class PhoneDetector:
         self.model = None
         self.available = False
 
+        from pathlib import Path
+
+        # Check local file paths
+        candidate_paths = [
+            Path(model_path),
+            Path(__file__).resolve().parent.parent.parent / model_path,
+            Path(__file__).resolve().parent.parent / model_path,
+        ]
+        resolved_path = None
+        for p in candidate_paths:
+            if p.is_file():
+                resolved_path = str(p)
+                break
+
+        if not resolved_path:
+            logger.info("Local YOLO weights not found at '%s'. Phone detection marked unavailable.", model_path)
+            self.available = False
+            return
+
         try:
             from ultralytics import YOLO
 
-            self.model = YOLO(model_path)
+            self.model = YOLO(resolved_path)
             self.available = True
-            logger.info("YOLOv8 Phone Detector initialized successfully.")
+            logger.info("YOLOv8 Phone Detector initialized successfully with %s.", resolved_path)
         except Exception as e:
             logger.warning("Failed to initialize YOLO model for phone detection: %s", e)
             self.available = False

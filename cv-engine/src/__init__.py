@@ -38,6 +38,7 @@ class CvFrameResult:
     session_metrics: Dict[str, Any]
     fps: float
     latency_ms: float
+    phone_available: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -129,6 +130,7 @@ class CvEngine:
             phone_detected=phone_res.detected,
             phone_confidence=phone_res.confidence,
             phone_bounding_box=phone_res.bounding_box,
+            phone_available=phone_res.available,
             focus_state=behavior_obs.focus_state.value,
             alert=alert_dict,
             session_metrics=metrics_dict,
@@ -145,6 +147,7 @@ class CvEngine:
             phone_detected=False,
             timestamp=now,
         )
+        phone_avail = self.phone_detector.available if self.phone_detector else False
         return CvFrameResult(
             timestamp=now,
             face_detected=False,
@@ -163,6 +166,7 @@ class CvEngine:
             phone_detected=False,
             phone_confidence=0.0,
             phone_bounding_box=None,
+            phone_available=phone_avail,
             focus_state=behavior_obs.focus_state.value,
             alert=asdict(behavior_obs.active_alert) if behavior_obs.active_alert else None,
             session_metrics=asdict(behavior_obs.session_metrics) if behavior_obs.session_metrics else {},

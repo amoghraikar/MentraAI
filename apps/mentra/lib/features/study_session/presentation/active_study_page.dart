@@ -67,19 +67,7 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
     }
   }
 
-  Color _getMonitoringStatusColor(MonitoringStatus status, bool isPaused) {
-    if (isPaused) return Colors.orange;
-    switch (status) {
-      case MonitoringStatus.running:
-        return AppColors.success;
-      case MonitoringStatus.permissionDenied:
-      case MonitoringStatus.unavailable:
-      case MonitoringStatus.error:
-        return Colors.grey;
-      default:
-        return AppColors.primary;
-    }
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -442,6 +430,9 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
               } else if (alert?.type == FocusEventType.faceAbsent) {
                 statusText = 'Away';
                 statusColor = Colors.orangeAccent;
+              } else if (alert?.type == FocusEventType.drowsinessDetected) {
+                statusText = 'Eyes Closed';
+                statusColor = Colors.amberAccent;
               } else if (alert != null) {
                 statusText = 'Distracted';
                 statusColor = Colors.amberAccent;
@@ -449,6 +440,8 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
                 statusText = 'Focused';
                 statusColor = AppColors.success;
               }
+
+              final scoreText = 'Score: ${sessionController.focusScore}%';
 
               return FittedBox(
                 fit: BoxFit.scaleDown,
@@ -475,7 +468,7 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
                     Text('•', style: AppTypography.labelSmall.copyWith(color: theme.dividerColor)),
                     const SizedBox(width: AppSpacing.sm),
                     Text(
-                      'Score: ${sessionController.focusScore}%',
+                      scoreText,
                       style: AppTypography.labelSmall.copyWith(
                         color: theme.colorScheme.primary,
                         fontWeight: FontWeight.w700,

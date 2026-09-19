@@ -31,6 +31,26 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: mentra-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-mentra}:${POSTGRES_PASSWORD:-mentra}@postgres:5432/${POSTGRES_DB:-mentra}
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET=${JWT_SECRET:-mentra_production_super_secret_jwt_key_startup_2026}
+      - CORS_ORIGINS=*
+      - AI_PROVIDER=auto
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres_data:
     driver: local

@@ -196,7 +196,7 @@ class AiCoachService:
 
         start_time = time.time()
         try:
-            response_text = await active_provider.generate_chat(
+            response_text = await self.local_llm.generate(
                 messages=chat_messages,
                 system_prompt=system_prompt,
                 temperature=0.7,
@@ -207,12 +207,10 @@ class AiCoachService:
             ai_logger.info(f"[MENTRA AI] latency = {latency_ms}ms")
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
-            ai_logger.warning(f"[MENTRA AI] primary provider failed after {latency_ms}ms: {e}. Falling back to Heuristic provider.")
-            heuristic_provider = AiProviderFactory.get_provider("heuristic")
-            response_text = await heuristic_provider.generate_chat(
-                messages=chat_messages,
-                system_prompt=system_prompt,
-                temperature=0.7,
+            ai_logger.error(f"[MENTRA AI] local model generation failed after {latency_ms}ms: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Mentra couldn't generate a response. Try again.",
             )
 
         # 11. Persist coach response
@@ -289,6 +287,9 @@ class AiCoachService:
                 yield f"data: {json.dumps({'chunk': chunk, 'done': False})}\n\n"
 
             complete_text = "".join(tokens).strip()
+            if not complete_text:
+                raise RuntimeError("Empty stream from local LLM")
+
             coach_msg = CoachMessage(
                 id=coach_msg_id,
                 user_id=user_id,
@@ -300,7 +301,7 @@ class AiCoachService:
             db.commit()
 
             yield f"data: {json.dumps({'chunk': '', 'done': True, 'id': coach_msg_id, 'message': complete_text})}\n\n"
-        except Exception:
+        except Exception as e:
             err_json = json.dumps({"error": "Mentra couldn't generate a response. Try again.", "done": True})
             yield f"data: {err_json}\n\n"
 

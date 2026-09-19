@@ -179,8 +179,8 @@ void main() {
     // 5. Navigate to AI Coach
     await tester.tap(find.text('AI Coach'));
     await tester.pumpAndSettle();
-    expect(find.text('Study Coach Active'), findsOneWidget);
-    expect(find.text('Ask Mentra'), findsOneWidget);
+    expect(find.text('MENTRA'), findsWidgets);
+    expect(find.text('Learn something today.'), findsOneWidget);
 
     // 6. Navigate to Settings & Test Theme Switch
     await tester.tap(find.text('Settings'));
