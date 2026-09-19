@@ -57,6 +57,7 @@ class MockAiCoachRepository implements AiCoachRepository {
     String? model,
     String? customSystemPrompt,
     String? customEndpointUrl,
+    String? attachedMaterialText,
   }) async {
     await Future.delayed(const Duration(milliseconds: 300));
     final q = question.toLowerCase();
@@ -87,6 +88,61 @@ class MockAiCoachRepository implements AiCoachRepository {
       text: reply,
       timestamp: DateTime.now(),
     );
+  }
+
+  @override
+  Stream<String> streamCoachQuestion(
+    String question, {
+    String? subjectId,
+    String? topicId,
+    List<ChatMessage>? history,
+    String? customSystemPrompt,
+  }) async* {
+    final reply = await askCoachQuestion(question, history: history);
+    final words = reply.text.split(' ');
+    for (int i = 0; i < words.length; i++) {
+      yield i == 0 ? words[i] : ' ${words[i]}';
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> testKey({
+    required String provider,
+    String? apiKey,
+    String? model,
+    String? customEndpointUrl,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return {
+      'success': true,
+      'latency_ms': 120,
+      'message': 'Connected to $provider model ${model ?? "default"} successfully.',
+      'provider': provider,
+      'model': model ?? 'default',
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> uploadStudyMaterial({
+    required String title,
+    required String content,
+    String? filename,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 150));
+    return {
+      'doc_id': 'doc_mock_1',
+      'title': title,
+      'filename': filename ?? '$title.txt',
+      'char_count': content.length,
+      'chunks_count': (content.length / 500).ceil(),
+      'summary_preview': content.length > 100 ? content.substring(0, 100) : content,
+    };
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> listStudyMaterials() async {
+    return [];
   }
 
   @override
@@ -155,4 +211,21 @@ class MockAiCoachRepository implements AiCoachRepository {
       'recommended_next_action': 'Write 3 self-quiz questions to lock in today’s progress.',
     };
   }
+
+  @override
+  Future<Map<String, dynamic>> getModelStatus() async {
+    return {
+      'state': 'READY',
+      'model': 'qwen2.5:0.5b',
+      'status_message': 'Mentra AI ready',
+      'is_ready': true,
+    };
+  }
+
+  @override
+  Future<void> cancelGeneration() async {}
+
+  @override
+  Future<void> clearChatHistory() async {}
 }
+

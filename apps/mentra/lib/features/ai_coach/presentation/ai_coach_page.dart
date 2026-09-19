@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/theme/app_colors.dart';
@@ -5,84 +6,11 @@ import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/mentra_badge.dart';
-import '../../../shared/widgets/mentra_button.dart';
-import '../../../shared/widgets/mentra_card.dart';
-import '../../../shared/widgets/mentra_page_header.dart';
-import '../../../shared/widgets/mentra_section.dart';
 import '../domain/models/coach_insight.dart';
 import '../domain/repositories/ai_coach_repository.dart';
-
-enum CoachGptPersona {
-  conceptTutor(
-    label: 'Master Tutor',
-    icon: Icons.school_rounded,
-    description: 'First-principles breakdown, intuitive analogies, and step-by-step derivations',
-    prompts: [
-      'Optimal study interval?',
-      'Active recall strategy',
-      'How to eliminate phone distraction?',
-      'Teach me Data Analytics',
-      'Explain OLS Regression',
-      'What is Gradient Descent?',
-    ],
-  ),
-  activeQuizzer(
-    label: 'Active Quizzer',
-    icon: Icons.quiz_rounded,
-    description: 'Active recall drills, retrieval practice questions, and formula tests',
-    prompts: [
-      'Quiz me on Data Analytics',
-      'Test my understanding of ANOVA',
-      'Active recall questions on ML',
-      'Flash quiz on study methods',
-    ],
-  ),
-  studyArchitect(
-    label: 'Study Architect',
-    icon: Icons.calendar_month_rounded,
-    description: 'Day-by-day revision timetables, Pomodoro pacing, and milestone roadmaps',
-    prompts: [
-      'Create a 7-day study plan',
-      'Optimal study interval?',
-      'How to structure 2-hour revision block',
-      'Exam preparation schedule',
-    ],
-  ),
-  focusMindset(
-    label: 'Focus & Mindset',
-    icon: Icons.self_improvement_rounded,
-    description: 'Anti-distraction tactics, phone friction boundaries, and fatigue resets',
-    prompts: [
-      'How to eliminate phone distraction?',
-      'How to beat drowsiness?',
-      'Overcoming study procrastination',
-      'The 20-20-20 visual reset technique',
-    ],
-  ),
-  progressAnalyst(
-    label: 'Progress Analyst',
-    icon: Icons.insights_rounded,
-    description: 'Live database telemetry analysis, focus health score, and retention trends',
-    prompts: [
-      'How is my progress?',
-      'Analyze my focus baseline',
-      'Evaluate my study consistency',
-      'What topic should I study next?',
-    ],
-  );
-
-  const CoachGptPersona({
-    required this.label,
-    required this.icon,
-    required this.description,
-    required this.prompts,
-  });
-
-  final String label;
-  final IconData icon;
-  final String description;
-  final List<String> prompts;
-}
+import 'widgets/chat_history_drawer.dart';
+import 'widgets/markdown_message_view.dart';
+import 'widgets/mentra_ai_avatar.dart';
 
 class AiCoachPage extends StatefulWidget {
   const AiCoachPage({
@@ -97,69 +25,89 @@ class AiCoachPage extends StatefulWidget {
 }
 
 class _AiCoachPageState extends State<AiCoachPage> {
-  List<CoachInsightModel> _insights = [];
-  List<ChatMessage> _messages = [];
   final TextEditingController _queryController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _inputFocusNode = FocusNode();
+
+  List<CoachInsightModel> _insights = [];
+  List<ChatMessage> _messages = [];
+  List<ChatMessage> _fullHistory = [];
+
   bool _isLoading = true;
-  bool _isSending = false;
+  bool _isGenerating = false;
   String? _errorMessage;
 
-  // Custom GPT Configuration
-  String _selectedProvider = 'openai';
-  String _customApiKey = '';
-  String _customModel = 'gpt-4o-mini';
-  String _customSystemPrompt = '';
-  String _customEndpointUrl = '';
-  CoachGptPersona _selectedPersona = CoachGptPersona.conceptTutor;
+  // Local Canonical Model State
+  String _modelState = 'READY'; // READY, GENERATING, STOPPING, ERROR
+  String _currentStreamBuffer = '';
+  StreamSubscription<String>? _activeStreamSubscription;
+
+  // Starter prompts
+  static const List<String> _starterPrompts = [
+    'Explain a topic',
+    'Quiz me',
+    'Help me understand',
+    'Practice',
+    'Optimal study interval?',
+    'Active recall strategy',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _loadCoachData();
+    _loadInitialData();
   }
 
   @override
   void dispose() {
+    _activeStreamSubscription?.cancel();
     _queryController.dispose();
     _scrollController.dispose();
+    _inputFocusNode.dispose();
     super.dispose();
   }
 
-  Future<void> _loadCoachData() async {
+  Future<void> _loadInitialData() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      final insights = await widget.aiCoachRepository.getCoachInsights();
-      final chat = await widget.aiCoachRepository.getInitialChatHistory();
+      final insightsFuture = widget.aiCoachRepository.getCoachInsights();
+      final statusFuture = widget.aiCoachRepository.getModelStatus();
+      final historyFuture = widget.aiCoachRepository.getInitialChatHistory();
+
+      final results = await Future.wait([insightsFuture, statusFuture, historyFuture]);
+
       if (!mounted) return;
       setState(() {
-        _insights = insights;
-        _messages = chat;
+        _insights = results[0] as List<CoachInsightModel>;
+        final status = results[1] as Map<String, dynamic>;
+        _modelState = (status['state'] as String? ?? 'READY').toUpperCase();
+        _fullHistory = results[2] as List<ChatMessage>;
+        _messages = [];
         _isLoading = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = 'Unable to load coaching data. Tap retry to reload.';
         _isLoading = false;
+        _errorMessage = 'Mentra AI is currently unavailable. Tap retry to reconnect.';
       });
     }
   }
 
   Future<void> _sendQuestion([String? promptText]) async {
     final text = (promptText ?? _queryController.text).trim();
-    if (text.isEmpty || _isSending) return;
+    if (text.isEmpty || _isGenerating) return;
 
     if (promptText == null) {
       _queryController.clear();
     }
 
     final userMsg = ChatMessage(
-      id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
+      id: 'usr_${DateTime.now().millisecondsSinceEpoch}',
       sender: 'user',
       text: text,
       timestamp: DateTime.now(),
@@ -167,42 +115,157 @@ class _AiCoachPageState extends State<AiCoachPage> {
 
     setState(() {
       _messages.add(userMsg);
-      _isSending = true;
+      _fullHistory.add(userMsg);
+      _isGenerating = true;
+      _modelState = 'GENERATING';
+      _currentStreamBuffer = '';
     });
 
     _scrollToBottom();
 
+    final coachMsgId = 'coach_${DateTime.now().millisecondsSinceEpoch}';
+    final coachPlaceholder = ChatMessage(
+      id: coachMsgId,
+      sender: 'coach',
+      text: '',
+      timestamp: DateTime.now(),
+    );
+
+    setState(() {
+      _messages.add(coachPlaceholder);
+    });
+
     try {
-      final reply = await widget.aiCoachRepository.askCoachQuestion(
+      final stream = widget.aiCoachRepository.streamCoachQuestion(
         text,
-        history: _messages,
-        provider: _selectedProvider,
-        apiKey: _customApiKey,
-        model: _customModel,
-        customSystemPrompt: _customSystemPrompt.isNotEmpty ? _customSystemPrompt : null,
-        customEndpointUrl: _customEndpointUrl.isNotEmpty ? _customEndpointUrl : null,
+        history: _messages.sublist(0, _messages.length - 1),
       );
-      if (!mounted) return;
-      setState(() {
-        _messages.add(reply);
-        _isSending = false;
-      });
-      _scrollToBottom();
+
+      _activeStreamSubscription = stream.listen(
+        (chunk) {
+          if (!mounted) return;
+          setState(() {
+            _currentStreamBuffer += chunk;
+            final idx = _messages.indexWhere((m) => m.id == coachMsgId);
+            if (idx != -1) {
+              _messages[idx] = ChatMessage(
+                id: coachMsgId,
+                sender: 'coach',
+                text: _currentStreamBuffer,
+                timestamp: coachPlaceholder.timestamp,
+              );
+            }
+          });
+          _scrollToBottom();
+        },
+        onError: (err) {
+          if (!mounted) return;
+          setState(() {
+            _isGenerating = false;
+            _modelState = 'READY';
+            final idx = _messages.indexWhere((m) => m.id == coachMsgId);
+            if (idx != -1 && _messages[idx].text.isEmpty) {
+              _messages[idx] = ChatMessage(
+                id: coachMsgId,
+                sender: 'coach',
+                text: 'Mentra couldn\'t generate a response. Please try again.',
+                timestamp: DateTime.now(),
+              );
+            }
+          });
+        },
+        onDone: () {
+          if (!mounted) return;
+          setState(() {
+            _isGenerating = false;
+            _modelState = 'READY';
+            final idx = _messages.indexWhere((m) => m.id == coachMsgId);
+            if (idx != -1) {
+              _fullHistory.add(_messages[idx]);
+            }
+          });
+          _scrollToBottom();
+        },
+        cancelOnError: true,
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _messages.add(
-          ChatMessage(
-            id: 'err_${DateTime.now().millisecondsSinceEpoch}',
+        _isGenerating = false;
+        _modelState = 'READY';
+        final idx = _messages.indexWhere((m) => m.id == coachMsgId);
+        if (idx != -1) {
+          _messages[idx] = ChatMessage(
+            id: coachMsgId,
             sender: 'coach',
-            text: 'I am temporarily unable to reach the AI engine. Please verify your internet connection or API Key.',
+            text: 'Mentra couldn\'t generate a response. Please try again.',
             timestamp: DateTime.now(),
-          ),
-        );
-        _isSending = false;
+          );
+        }
       });
       _scrollToBottom();
     }
+  }
+
+  Future<void> _stopGeneration() async {
+    setState(() {
+      _modelState = 'STOPPING';
+    });
+
+    await _activeStreamSubscription?.cancel();
+    _activeStreamSubscription = null;
+
+    try {
+      await widget.aiCoachRepository.cancelGeneration();
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _isGenerating = false;
+        _modelState = 'READY';
+      });
+      _scrollToBottom();
+    }
+  }
+
+  void _startNewChat() {
+    _activeStreamSubscription?.cancel();
+    _activeStreamSubscription = null;
+    setState(() {
+      _messages.clear();
+      _isGenerating = false;
+      _modelState = 'READY';
+      _currentStreamBuffer = '';
+    });
+    _queryController.clear();
+    _inputFocusNode.requestFocus();
+  }
+
+  Future<void> _clearChatHistory() async {
+    _startNewChat();
+    setState(() {
+      _fullHistory.clear();
+    });
+    await widget.aiCoachRepository.clearChatHistory();
+  }
+
+  void _openChatHistory() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => FractionallySizedBox(
+        heightFactor: 0.85,
+        child: ChatHistoryDrawer(
+          messages: _fullHistory,
+          onSelectMessage: (msg) {
+            _sendQuestion(msg.text);
+          },
+          onNewChat: _startNewChat,
+          onClearHistory: _clearChatHistory,
+        ),
+      ),
+    );
   }
 
   void _scrollToBottom() {
@@ -210,562 +273,388 @@ class _AiCoachPageState extends State<AiCoachPage> {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 250),
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
       }
     });
   }
 
-  void _copyToClipboard(String text) {
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Copied response to clipboard'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  void _clearChatHistory() {
-    setState(() {
-      _messages = [
-        ChatMessage(
-          id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
-          sender: 'coach',
-          text: 'New session initialized with **${_selectedPersona.label} GPT**. Ask any question to begin!',
-          timestamp: DateTime.now(),
-        ),
-      ];
-    });
-  }
-
-  void _showAiConfigDialog() {
-    final keyController = TextEditingController(text: _customApiKey);
-    final modelController = TextEditingController(text: _customModel);
-    final promptController = TextEditingController(text: _customSystemPrompt);
-    final endpointController = TextEditingController(text: _customEndpointUrl);
-    String tempProvider = _selectedProvider;
-
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return AlertDialog(
-              backgroundColor: Theme.of(context).colorScheme.surface,
-              title: Row(
-                children: [
-                  const Icon(Icons.psychology_outlined, color: AppColors.primary, size: 22),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text('Custom Study GPT Setup', style: AppTypography.titleMedium),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Connect your own GPT model, API key, or custom LLM endpoint to power your study assistant with zero preset limits:',
-                      style: AppTypography.bodySmall,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    DropdownButtonFormField<String>(
-                      initialValue: tempProvider,
-                      decoration: const InputDecoration(
-                        labelText: 'GPT Engine / LLM Provider',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: 'openai', child: Text('OpenAI ChatGPT (GPT-4o / GPT-4o-mini)')),
-                        DropdownMenuItem(value: 'gemini', child: Text('Google Gemini (Gemini 1.5 / 2.0)')),
-                        DropdownMenuItem(value: 'groq', child: Text('Groq Cloud (Llama 3.3 70B)')),
-                        DropdownMenuItem(value: 'openrouter', child: Text('OpenRouter (Claude, DeepSeek, Llama)')),
-                        DropdownMenuItem(value: 'ollama', child: Text('Ollama (Local Offline LLM)')),
-                        DropdownMenuItem(value: 'custom', child: Text('Custom OpenAI-Compatible API')),
-                        DropdownMenuItem(value: 'cognitive', child: Text('Mentra Dynamic Real-Time AI')),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) {
-                          setModalState(() {
-                            tempProvider = val;
-                            if (val == 'openai') modelController.text = 'gpt-4o-mini';
-                            if (val == 'gemini') modelController.text = 'gemini-1.5-flash';
-                            if (val == 'groq') modelController.text = 'llama-3.3-70b-versatile';
-                            if (val == 'openrouter') modelController.text = 'meta-llama/llama-3.3-70b-instruct:free';
-                            if (val == 'ollama') modelController.text = 'llama3';
-                          });
-                        }
-                      },
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    if (tempProvider != 'cognitive' && tempProvider != 'ollama') ...[
-                      TextField(
-                        controller: keyController,
-                        obscureText: true,
-                        decoration: InputDecoration(
-                          labelText: '${tempProvider.toUpperCase()} API Key',
-                          hintText: 'Enter your API key (e.g. sk-...)',
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                    ],
-                    if (tempProvider == 'custom' || tempProvider == 'ollama') ...[
-                      TextField(
-                        controller: endpointController,
-                        decoration: const InputDecoration(
-                          labelText: 'Base Endpoint URL',
-                          hintText: 'e.g. http://localhost:11434/v1 or https://api.together.xyz/v1',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                    ],
-                    TextField(
-                      controller: modelController,
-                      decoration: const InputDecoration(
-                        labelText: 'Model Identifier',
-                        hintText: 'e.g. gpt-4o, gemini-1.5-pro, llama-3.3-70b',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    TextField(
-                      controller: promptController,
-                      maxLines: 2,
-                      decoration: const InputDecoration(
-                        labelText: 'Custom System Instructions (Optional)',
-                        hintText: 'e.g. You are a strict Harvard professor, answer concisely with step-by-step math.',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Cancel'),
-                ),
-                MentraButton(
-                  label: 'Connect & Save GPT',
-                  icon: Icons.check_rounded,
-                  onPressed: () {
-                    setState(() {
-                      _selectedProvider = tempProvider;
-                      _customApiKey = keyController.text.trim();
-                      _customModel = modelController.text.trim();
-                      _customSystemPrompt = promptController.text.trim();
-                      _customEndpointUrl = endpointController.text.trim();
-                    });
-                    Navigator.of(ctx).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Connected to $_selectedProvider (${_customModel.isNotEmpty ? _customModel : "default"})')),
-                    );
-                  },
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
     if (_isLoading) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(AppSpacing.xxl),
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    if (_errorMessage != null) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_errorMessage!, style: AppTypography.bodyMedium),
-            const SizedBox(height: AppSpacing.md),
-            MentraButton(
-              label: 'Retry',
-              icon: Icons.refresh_rounded,
-              onPressed: _loadCoachData,
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Expanded(
-              child: MentraPageHeader(
-                title: 'AI Coach',
-                subtitle: 'Study Coach GPT — real-time instruction, concept breakdown, active quizzes, and focus coaching',
-              ),
-            ),
-            MentraButton(
-              label: 'GPT Settings & Key',
-              icon: Icons.tune_rounded,
-              onPressed: _showAiConfigDialog,
-            ),
-          ],
-        ),
-
-        // Personalized Coach Greeting Banner
-        MentraCard(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Row(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xxl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.accent.withValues(alpha: isDark ? 0.2 : 0.1),
-                  borderRadius: AppRadius.borderMd,
-                ),
-                child: const Icon(Icons.psychology_outlined, color: AppColors.accent, size: 26),
-              ),
-              const SizedBox(width: AppSpacing.lg),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: AppSpacing.sm,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text('Study Coach Active', style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700)),
-                        const MentraBadge(label: 'Real-Time GPT Active', variant: MentraBadgeVariant.success),
-                        MentraBadge(
-                          label: '${_selectedProvider.toUpperCase()} (${_customModel.isNotEmpty ? _customModel : "live"})',
-                          variant: MentraBadgeVariant.primary,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      'Ask any custom question, request active recall quizzes, or configure your own model in GPT Settings.',
-                      style: AppTypography.bodySmall.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+              const CircularProgressIndicator(color: AppColors.primary),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                'Preparing your study coach...',
+                style: AppTypography.titleSmall.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
         ),
+      );
+    }
 
-        const SizedBox(height: AppSpacing.xl),
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final isMobile = MediaQuery.of(context).size.width < 768;
 
-        // Behavioral Insights Cards
-        MentraSection(
-          title: 'Focus Patterns & Recommendations',
-          subtitle: 'Synthesized observations derived from your study telemetry',
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isBounded = constraints.hasBoundedHeight;
+
+        final conversationContent = _messages.isEmpty
+            ? _buildEmptyState(theme, isDark, isMobile, isBounded)
+            : _buildConversationView(theme, isDark, isMobile, isBounded);
+
+        return Container(
+          color: theme.scaffoldBackgroundColor,
           child: Column(
-            children: _insights.map((insight) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                child: MentraCard(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
+            children: [
+              // App Header Bar
+              _buildHeaderBar(theme, isDark, isMobile),
+
+              if (_errorMessage != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 6),
+                  color: AppColors.error.withValues(alpha: 0.1),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline_rounded, size: 16, color: AppColors.error),
+                      const SizedBox(width: AppSpacing.xs),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: AppTypography.bodySmall.copyWith(color: AppColors.error),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _loadInitialData,
+                        child: const Text('Retry', style: TextStyle(color: AppColors.error)),
+                      ),
+                    ],
+                  ),
+                ),
+
+              const Divider(height: 1),
+
+              // Main Conversation or Empty State Area
+              if (isBounded)
+                Expanded(child: conversationContent)
+              else
+                conversationContent,
+
+              // Bottom Input Composer
+              _buildComposer(theme, isDark, isMobile),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeaderBar(ThemeData theme, bool isDark, bool isMobile) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? AppSpacing.md : AppSpacing.lg,
+        vertical: AppSpacing.sm,
+      ),
+      color: theme.colorScheme.surface,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Brand & Title
+          Expanded(
+            child: Row(
+              children: [
+                MentraAiAvatar(size: 34, isGenerating: _isGenerating),
+                const SizedBox(width: AppSpacing.sm),
+                Flexible(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          MentraBadge(label: insight.category, variant: MentraBadgeVariant.neutral),
                           Text(
-                            insight.impactMetric,
+                            'MENTRA',
+                            style: AppTypography.titleMedium.copyWith(
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          Text(
+                            'AI Coach',
                             style: AppTypography.labelSmall.copyWith(
-                              color: AppColors.success,
-                              fontWeight: FontWeight.w700,
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: AppSpacing.sm),
                       Text(
-                        insight.title,
-                        style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        insight.summary,
-                        style: AppTypography.bodySmall.copyWith(
+                        'Your personal AI study coach',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelSmall.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
-                          height: 1.4,
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.md),
-                      Container(
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF222222) : const Color(0xFFF2F2F0),
-                          borderRadius: AppRadius.borderSm,
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Actions: Status, History, New Chat
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const MentraBadge(
+                label: 'Study Coach Active',
+                variant: MentraBadgeVariant.success,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              IconButton(
+                tooltip: 'Chat History',
+                icon: const Icon(Icons.history_rounded, size: 20),
+                onPressed: _openChatHistory,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              ElevatedButton.icon(
+                onPressed: _startNewChat,
+                icon: const Icon(Icons.add_rounded, size: 16),
+                label: const Text('New Chat'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  textStyle: AppTypography.labelMedium.copyWith(fontWeight: FontWeight.w600),
+                  shape: RoundedRectangleBorder(borderRadius: AppRadius.borderSm),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(ThemeData theme, bool isDark, bool isMobile, bool isBounded) {
+    final body = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const SizedBox(height: AppSpacing.lg),
+
+            // Mentra Brand Avatar
+            const MentraAiAvatar(size: 64),
+            const SizedBox(height: AppSpacing.lg),
+
+            // Headline & Description
+            Text(
+              'Learn something today.',
+              textAlign: TextAlign.center,
+              style: AppTypography.displayMedium.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Ask Mentra anything about your studies.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+
+            const SizedBox(height: AppSpacing.xl),
+
+            // Starter Prompts Grid
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              alignment: WrapAlignment.center,
+              children: _starterPrompts.map((prompt) {
+                return ActionChip(
+                  label: Text(
+                    prompt,
+                    style: AppTypography.bodySmall.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  backgroundColor: isDark ? const Color(0xFF1E1E22) : const Color(0xFFF1F5F9),
+                  side: BorderSide(
+                    color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
+                  ),
+                  shape: RoundedRectangleBorder(borderRadius: AppRadius.borderMd),
+                  onPressed: () => _sendQuestion(prompt),
+                );
+              }).toList(),
+            ),
+
+            // Insights Summary
+            if (_insights.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.xl),
+              Container(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF161618) : const Color(0xFFF8FAFC),
+                  borderRadius: AppRadius.borderMd,
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF27272A) : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.insights_rounded, size: 16, color: AppColors.primary),
+                        const SizedBox(width: AppSpacing.xs),
+                        Text(
+                          'Focus Recommendations',
+                          style: AppTypography.titleSmall.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    ..._insights.take(2).map((ins) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.lightbulb_outline_rounded, size: 16, color: Colors.amber),
-                            const SizedBox(width: AppSpacing.sm),
+                            const Padding(
+                              padding: EdgeInsets.only(top: 4, right: 6),
+                              child: Icon(Icons.circle, size: 4, color: AppColors.primary),
+                            ),
                             Expanded(
-                              child: Text(
-                                insight.actionRecommendation,
-                                style: AppTypography.bodySmall.copyWith(fontWeight: FontWeight.w500),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    ins.title,
+                                    style: AppTypography.bodySmall.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: theme.colorScheme.onSurface,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    ins.actionRecommendation,
+                                    style: AppTypography.bodySmall.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
+                      );
+                    }),
+                  ],
                 ),
-              );
-            }).toList(),
-          ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.lg),
+          ],
         ),
+      ),
+    );
 
-        const SizedBox(height: AppSpacing.xl),
+    if (isBounded) {
+      return SingleChildScrollView(
+        padding: EdgeInsets.symmetric(
+          horizontal: isMobile ? AppSpacing.md : AppSpacing.xl,
+          vertical: AppSpacing.md,
+        ),
+        child: body,
+      );
+    }
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? AppSpacing.md : AppSpacing.xl,
+        vertical: AppSpacing.md,
+      ),
+      child: body,
+    );
+  }
 
-        // Interactive "Ask Mentra" Study Chat Workspace
-        MentraSection(
-          title: 'Ask Mentra',
-          subtitle: 'Study Coach GPT Workspace — live multi-turn conversations powered by your configured GPT model',
-          child: MentraCard(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Persona Selector Tabs
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: CoachGptPersona.values.map((persona) {
-                      final isSelected = _selectedPersona == persona;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: AppSpacing.xs),
-                        child: FilterChip(
-                          selected: isSelected,
-                          avatar: Icon(
-                            persona.icon,
-                            size: 16,
-                            color: isSelected ? Colors.white : AppColors.primary,
-                          ),
-                          label: Text(persona.label),
-                          labelStyle: AppTypography.labelSmall.copyWith(
-                            color: isSelected ? Colors.white : theme.colorScheme.onSurface,
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
-                          ),
-                          selectedColor: AppColors.primary,
-                          backgroundColor: isDark ? const Color(0xFF1E2420) : const Color(0xFFF0F4F2),
-                          side: BorderSide(
-                            color: isSelected ? AppColors.primary : theme.dividerColor,
-                          ),
-                          onSelected: (_) {
-                            setState(() {
-                              _selectedPersona = persona;
-                            });
-                          },
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  _selectedPersona.description,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
+  Widget _buildConversationView(ThemeData theme, bool isDark, bool isMobile, bool isBounded) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760),
+        child: ListView.builder(
+          controller: _scrollController,
+          shrinkWrap: !isBounded,
+          physics: isBounded ? null : const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.symmetric(
+            horizontal: isMobile ? AppSpacing.md : AppSpacing.lg,
+            vertical: AppSpacing.lg,
+          ),
+          itemCount: _messages.length,
+          itemBuilder: (context, index) {
+            final msg = _messages[index];
+            final isUser = msg.sender == 'user';
+            final isLastMsg = index == _messages.length - 1;
+            final isCurrentlyStreaming = isLastMsg && !isUser && _isGenerating;
 
-                // Quick Suggestion Chips for Selected Persona
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: _selectedPersona.prompts.map((p) {
-                      return Padding(
-                        padding: const EdgeInsets.only(right: AppSpacing.xs),
-                        child: _buildPromptChip(p),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.xl),
+              child: isUser
+                  ? _buildUserMessage(msg, theme, isDark)
+                  : _buildCoachMessage(msg, theme, isDark, isCurrentlyStreaming),
+            );
+          },
+        ),
+      ),
+    );
+  }
 
-                // Header with Clear Chat action
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Live Conversation Session',
-                      style: AppTypography.labelSmall.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    TextButton.icon(
-                      icon: const Icon(Icons.refresh_rounded, size: 14),
-                      label: Text('New Chat', style: AppTypography.labelSmall),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      onPressed: _clearChatHistory,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xs),
-
-                // Message History List
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 420),
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    shrinkWrap: true,
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = _messages[index];
-                      final isUser = msg.sender == 'user';
-                      return Align(
-                        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-                          constraints: const BoxConstraints(maxWidth: 640),
-                          decoration: BoxDecoration(
-                            color: isUser
-                                ? theme.colorScheme.primary
-                                : (isDark ? const Color(0xFF1E2420) : const Color(0xFFF2F5F3)),
-                            border: Border.all(
-                              color: isUser
-                                  ? theme.colorScheme.primary
-                                  : (isDark ? const Color(0xFF2A362E) : const Color(0xFFE2E8E4)),
-                            ),
-                            borderRadius: AppRadius.borderMd,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        isUser ? Icons.person_outline_rounded : _selectedPersona.icon,
-                                        size: 14,
-                                        color: isUser ? Colors.white70 : AppColors.primary,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        isUser ? 'You' : 'Mentra ${_selectedPersona.label}',
-                                        style: AppTypography.labelSmall.copyWith(
-                                          color: isUser ? Colors.white70 : AppColors.primary,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (!isUser)
-                                    IconButton(
-                                      icon: const Icon(Icons.copy_rounded, size: 14),
-                                      tooltip: 'Copy response',
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                      onPressed: () => _copyToClipboard(msg.text),
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(height: AppSpacing.xs),
-                              _buildFormattedText(msg.text, isUser, theme),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                if (_isSending) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Row(
-                    children: [
-                      const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Text(
-                        'Mentra GPT is generating response...',
-                        style: AppTypography.labelSmall.copyWith(color: AppColors.primary),
-                      ),
-                    ],
-                  ),
-                ],
-
-                const SizedBox(height: AppSpacing.md),
-                Divider(color: theme.dividerColor, height: 1),
-                const SizedBox(height: AppSpacing.md),
-
-                // Query Input Bar
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _queryController,
-                        onSubmitted: (_) => _sendQuestion(),
-                        decoration: InputDecoration(
-                          hintText: 'Ask ${_selectedPersona.label} anything (e.g. teach me, quiz me, explain math formula)...',
-                          hintStyle: AppTypography.bodySmall.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                          ),
-                          filled: true,
-                          fillColor: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF9F9F8),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 12),
-                          border: OutlineInputBorder(
-                            borderRadius: AppRadius.borderSm,
-                            borderSide: BorderSide(color: theme.dividerColor),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: AppRadius.borderSm,
-                            borderSide: BorderSide(color: theme.dividerColor),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    MentraButton(
-                      label: 'Send',
-                      icon: Icons.send_rounded,
-                      isLoading: _isSending,
-                      onPressed: _sendQuestion,
-                    ),
-                  ],
-                ),
-              ],
+  Widget _buildUserMessage(ChatMessage msg, ThemeData theme, bool isDark) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(width: 48),
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(16),
+                topRight: const Radius.circular(4),
+                bottomLeft: const Radius.circular(16),
+                bottomRight: const Radius.circular(16),
+              ),
+            ),
+            child: Text(
+              msg.text,
+              style: AppTypography.bodyMedium.copyWith(
+                color: Colors.white,
+                height: 1.45,
+              ),
             ),
           ),
         ),
@@ -773,81 +662,219 @@ class _AiCoachPageState extends State<AiCoachPage> {
     );
   }
 
-  Widget _buildFormattedText(String text, bool isUser, ThemeData theme) {
-    if (isUser) {
-      return Text(
-        text,
-        style: AppTypography.bodySmall.copyWith(
-          color: Colors.white,
-          height: 1.45,
-        ),
-      );
-    }
+  Widget _buildCoachMessage(ChatMessage msg, ThemeData theme, bool isDark, bool isStreaming) {
+    final isError = msg.text.contains("Mentra couldn't generate a response");
 
-    final lines = text.split('\n');
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: lines.map((line) {
-        final trimmed = line.trim();
-        if (trimmed.isEmpty) {
-          return const SizedBox(height: 6);
-        }
-        if (trimmed.startsWith('### ')) {
-          return Padding(
-            padding: const EdgeInsets.only(top: 4, bottom: 4),
-            child: Text(
-              trimmed.substring(4),
-              style: AppTypography.titleSmall.copyWith(
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-          );
-        }
-        if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-          final bulletText = trimmed.substring(2);
-          return Padding(
-            padding: const EdgeInsets.only(left: 6, bottom: 3),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('• ', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
-                Expanded(
-                  child: Text(
-                    bulletText.replaceAll('**', ''),
-                    style: AppTypography.bodySmall.copyWith(
-                      color: theme.colorScheme.onSurface,
-                      height: 1.4,
+      children: [
+        MentraAiAvatar(size: 32, isGenerating: isStreaming),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Text(
+                    'MENTRA',
+                    style: AppTypography.labelMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                      color: AppColors.primary,
                     ),
+                  ),
+                  if (isStreaming) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 6),
+
+              // Content or Typing Indicator
+              if (msg.text.isEmpty && isStreaming)
+                Row(
+                  children: [
+                    Text(
+                      'Mentra is thinking...',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                )
+              else
+                MarkdownMessageView(
+                  content: msg.text,
+                  isUser: false,
+                ),
+
+              // Error Retry Action
+              if (isError) ...[
+                const SizedBox(height: AppSpacing.sm),
+                TextButton.icon(
+                  onPressed: () {
+                    final lastUserMsg = _messages.reversed.firstWhere(
+                      (m) => m.sender == 'user',
+                      orElse: () => ChatMessage(id: '', sender: '', text: '', timestamp: DateTime.now()),
+                    );
+                    if (lastUserMsg.text.isNotEmpty) {
+                      _sendQuestion(lastUserMsg.text);
+                    }
+                  },
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('Retry'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   ),
                 ),
               ],
-            ),
-          );
-        }
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 3),
-          child: Text(
-            trimmed.replaceAll('**', ''),
-            style: AppTypography.bodySmall.copyWith(
-              color: theme.colorScheme.onSurface,
-              height: 1.45,
-            ),
+            ],
           ),
-        );
-      }).toList(),
+        ),
+      ],
     );
   }
 
-  Widget _buildPromptChip(String label) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+  Widget _buildComposer(ThemeData theme, bool isDark, bool isMobile) {
+    final isReady = _modelState == 'READY' && !_isLoading;
 
-    return ActionChip(
-      label: Text(label, style: AppTypography.labelSmall.copyWith(fontSize: 11)),
-      backgroundColor: isDark ? const Color(0xFF222222) : const Color(0xFFEFEFEF),
-      side: BorderSide(color: theme.dividerColor),
-      onPressed: () => _sendQuestion(label),
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? AppSpacing.md : AppSpacing.lg,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(
+          top: BorderSide(color: theme.dividerColor.withValues(alpha: 0.6)),
+        ),
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Prompt Label Header
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6, left: 2),
+                child: Row(
+                  children: [
+                    Text(
+                      'Ask Mentra',
+                      style: AppTypography.labelSmall.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              Container(
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E1E22) : const Color(0xFFF8FAFC),
+                  borderRadius: AppRadius.borderMd,
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
+                    width: 1,
+                  ),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // Multiline Text Field
+                    Expanded(
+                      child: CallbackShortcuts(
+                        bindings: {
+                          const SingleActivator(LogicalKeyboardKey.enter): () {
+                            if (!_isGenerating && _queryController.text.trim().isNotEmpty) {
+                              _sendQuestion();
+                            }
+                          },
+                        },
+                        child: TextField(
+                          controller: _queryController,
+                          focusNode: _inputFocusNode,
+                          enabled: isReady || _isGenerating,
+                          maxLines: 4,
+                          minLines: 1,
+                          keyboardType: TextInputType.multiline,
+                          textInputAction: TextInputAction.newline,
+                          style: AppTypography.bodyMedium,
+                          decoration: InputDecoration(
+                            hintText: 'Ask Mentra anything...',
+                            hintStyle: AppTypography.bodyMedium.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          onChanged: (_) {
+                            setState(() {});
+                          },
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(width: AppSpacing.xs),
+
+                    // Action Button: Stop during generation, Send otherwise
+                    if (_isGenerating)
+                      ElevatedButton.icon(
+                        onPressed: _stopGeneration,
+                        icon: const Icon(Icons.stop_circle_rounded, size: 16),
+                        label: const Text('Stop'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.error,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: AppRadius.borderSm),
+                        ),
+                      )
+                    else
+                      IconButton(
+                        tooltip: 'Send',
+                        icon: const Icon(Icons.arrow_upward_rounded, size: 20),
+                        color: _queryController.text.trim().isNotEmpty && isReady
+                            ? AppColors.primary
+                            : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                        onPressed: _queryController.text.trim().isNotEmpty && isReady
+                            ? () => _sendQuestion()
+                            : null,
+                      ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 4),
+              Center(
+                child: Text(
+                  'Mentra AI • Local private intelligence',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

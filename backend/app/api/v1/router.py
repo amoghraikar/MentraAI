@@ -3,6 +3,7 @@ from app.api.v1.endpoints import (
     ai_coach,
     analytics,
     auth,
+    cv,
     goals,
     health,
     notes,
@@ -24,3 +25,4 @@ api_router.include_router(goals.router, prefix="/goals", tags=["goals"])
 api_router.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
 api_router.include_router(ai_coach.router, prefix="/ai-coach", tags=["ai-coach"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
+api_router.include_router(cv.router, prefix="/cv", tags=["cv"])

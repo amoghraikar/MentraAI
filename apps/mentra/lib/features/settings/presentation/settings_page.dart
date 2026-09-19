@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -19,16 +20,22 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   int _selectedTab = 0;
+  final ApiClient _apiClient = ApiClient();
 
   final List<String> _tabs = [
     'Profile',
     'Appearance',
+    'Local AI Engine',
     'Study Preferences',
     'Privacy',
     'Notifications',
     'Camera & Permissions',
     'Data',
   ];
+
+  bool _isTestingKey = false;
+  String? _aiTestResult;
+  bool? _aiTestSuccess;
 
   @override
   Widget build(BuildContext context) {
@@ -109,14 +116,16 @@ class _SettingsPageState extends State<SettingsPage> {
       case 1:
         return _buildAppearanceSection(themeCtrl);
       case 2:
-        return _buildStudyPreferencesSection();
+        return _buildAiModelSection();
       case 3:
-        return _buildPrivacySection();
+        return _buildStudyPreferencesSection();
       case 4:
-        return _buildNotificationsSection();
+        return _buildPrivacySection();
       case 5:
-        return _buildCameraSection();
+        return _buildNotificationsSection();
       case 6:
+        return _buildCameraSection();
+      case 7:
         return _buildDataSection();
       default:
         return const SizedBox.shrink();
@@ -312,6 +321,135 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAiModelSection() {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return MentraSection(
+      title: 'Local AI Engine',
+      subtitle: '100% offline, local open-weight instruction-tuned LLM execution',
+      child: MentraCard(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.memory_rounded, color: AppColors.primary, size: 22),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Canonical Model: qwen2.5:0.5b', style: AppTypography.titleSmall),
+                      Text('Open-weight instruction-tuned model running locally via Ollama runtime', style: AppTypography.bodySmall),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle)),
+                      const SizedBox(width: 6),
+                      Text('100% OFFLINE', style: AppTypography.labelSmall.copyWith(color: AppColors.success, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            if (_aiTestResult != null) ...[
+              Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: (_aiTestSuccess ?? false)
+                      ? AppColors.success.withValues(alpha: isDark ? 0.2 : 0.1)
+                      : theme.colorScheme.error.withValues(alpha: isDark ? 0.2 : 0.1),
+                  borderRadius: AppRadius.borderSm,
+                  border: Border.all(
+                    color: (_aiTestSuccess ?? false) ? AppColors.success : theme.colorScheme.error,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      (_aiTestSuccess ?? false) ? Icons.check_circle_outline : Icons.error_outline,
+                      color: (_aiTestSuccess ?? false) ? AppColors.success : theme.colorScheme.error,
+                      size: 20,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        _aiTestResult!,
+                        style: AppTypography.labelSmall.copyWith(
+                          color: (_aiTestSuccess ?? false) ? AppColors.success : theme.colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
+            Row(
+              children: [
+                MentraButton(
+                  label: _isTestingKey ? 'Checking Model...' : 'Check Local AI Engine Status',
+                  icon: Icons.refresh_rounded,
+                  variant: MentraButtonVariant.secondary,
+                  isLoading: _isTestingKey,
+                  onPressed: () async {
+                    setState(() {
+                      _isTestingKey = true;
+                      _aiTestResult = null;
+                      _aiTestSuccess = null;
+                    });
+                    try {
+                      final res = await _apiClient.get('/api/v1/ai-coach/status');
+                      if (res is Map<String, dynamic> && res['is_ready'] == true) {
+                        setState(() {
+                          _isTestingKey = false;
+                          _aiTestSuccess = true;
+                          _aiTestResult = 'Mentra Local AI Engine ready! Model: ${res['model']} (Status: ${res['status_message']})';
+                        });
+                      } else {
+                        setState(() {
+                          _isTestingKey = false;
+                          _aiTestSuccess = false;
+                          final status = res is Map<String, dynamic> ? res['status_message'] ?? 'Unavailable' : 'Unavailable';
+                          _aiTestResult = 'Model engine not ready. Status: $status';
+                        });
+                      }
+                    } catch (e) {
+                      setState(() {
+                        _isTestingKey = false;
+                        _aiTestSuccess = false;
+                        _aiTestResult = 'Could not reach backend AI engine: $e';
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

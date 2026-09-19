@@ -77,3 +77,9 @@ apps/mentra/android/local.properties
 postgres_data/
 redis_data/
 *.log
+
+# Models & Databases
+*.pt
+*.db
+*.sqlite
+*.sqlite3

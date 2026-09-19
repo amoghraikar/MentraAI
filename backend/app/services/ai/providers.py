@@ -2,8 +2,9 @@ import json
 import logging
 import os
 import re
+import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Type, TypeVar
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
 import httpx
 from pydantic import BaseModel
 
@@ -32,7 +33,6 @@ class BaseAiProvider(ABC):
         temperature: float = 0.7,
         max_tokens: int = 1500,
     ) -> str:
-        """Default chat generation by aggregating messages into a text prompt."""
         full_prompt = "\n".join(f"{m.get('role', 'user').capitalize()}: {m.get('content', '')}" for m in messages)
         return await self.generate_text(full_prompt, system_prompt, temperature, max_tokens)
 
@@ -46,9 +46,28 @@ class BaseAiProvider(ABC):
     ) -> T:
         pass
 
+    async def test_connection(self) -> Dict[str, Any]:
+        """Verifies live API key and model connectivity."""
+        start = time.time()
+        try:
+            res = await self.generate_text("Reply with 'OK' only.", system_prompt="Test ping", max_tokens=10)
+            latency_ms = int((time.time() - start) * 1000)
+            return {
+                "success": True,
+                "latency_ms": latency_ms,
+                "message": f"Successfully connected to {type(self).__name__}",
+                "preview": res[:100],
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "latency_ms": int((time.time() - start) * 1000),
+                "error": str(e),
+            }
+
 
 class OpenAiProvider(BaseAiProvider):
-    """Real OpenAI ChatGPT Provider implementation (GPT-4o, GPT-4o-mini, GPT-3.5-turbo)."""
+    """Real OpenAI ChatGPT Provider implementation (GPT-4o, GPT-4o-mini, GPT-3.5-turbo, etc.)."""
 
     def __init__(
         self,
@@ -56,10 +75,9 @@ class OpenAiProvider(BaseAiProvider):
         model: Optional[str] = None,
         base_url: Optional[str] = None,
     ):
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
+        self.api_key = (api_key or os.getenv("OPENAI_API_KEY", "")).strip()
         self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         self.base_url = (base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
-        self.fallback_provider = DynamicCognitiveAiProvider()
 
     async def generate_chat(
         self,
@@ -69,7 +87,7 @@ class OpenAiProvider(BaseAiProvider):
         max_tokens: int = 1500,
     ) -> str:
         if not self.api_key:
-            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+            raise ValueError("OpenAI Error: No API key configured. Please set OPENAI_API_KEY in backend/.env or configure your key.")
 
         url = f"{self.base_url}/chat/completions"
         headers = {
@@ -93,15 +111,19 @@ class OpenAiProvider(BaseAiProvider):
             "max_tokens": max_tokens,
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
-                res = await client.post(url, headers=headers, json=payload)
-                res.raise_for_status()
-                data = res.json()
-                return data["choices"][0]["message"]["content"].strip()
-        except Exception as e:
-            logger.warning(f"OpenAI API chat failed: {e}. Utilizing fallback provider.")
-            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            res = await client.post(url, headers=headers, json=payload)
+            if res.status_code != 200:
+                err_text = res.text
+                try:
+                    err_json = res.json()
+                    err_text = err_json.get("error", {}).get("message", err_text)
+                except Exception:
+                    pass
+                raise RuntimeError(f"OpenAI API Error [{res.status_code}]: {err_text}")
+
+            data = res.json()
+            return data["choices"][0]["message"]["content"].strip()
 
     async def generate_text(
         self,
@@ -120,7 +142,7 @@ class OpenAiProvider(BaseAiProvider):
         temperature: float = 0.5,
     ) -> T:
         if not self.api_key:
-            return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
+            raise ValueError("OpenAI Error: No API key configured. Please set OPENAI_API_KEY in backend/.env.")
 
         schema_json = json.dumps(response_model.model_json_schema())
         json_directive = f"IMPORTANT: Respond ONLY with a raw JSON object strictly adhering to this schema:\n{schema_json}"
@@ -145,25 +167,21 @@ class OpenAiProvider(BaseAiProvider):
             "max_tokens": 1200,
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
-                res = await client.post(url, headers=headers, json=payload)
-                res.raise_for_status()
-                data = res.json()
-                raw_text = data["choices"][0]["message"]["content"].strip()
-                return response_model.model_validate(json.loads(raw_text))
-        except Exception as e:
-            logger.warning(f"Structured parsing failed for OpenAI: {e}. Utilizing fallback.")
-            return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            res = await client.post(url, headers=headers, json=payload)
+            if res.status_code != 200:
+                raise RuntimeError(f"OpenAI API Error [{res.status_code}]: {res.text}")
+            data = res.json()
+            raw_text = data["choices"][0]["message"]["content"].strip()
+            return response_model.model_validate(json.loads(raw_text))
 
 
 class GroqProvider(BaseAiProvider):
     """Groq Cloud Provider implementation for ultra-fast Llama 3.3 / Llama 3.1 inference."""
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        self.api_key = api_key or os.getenv("GROQ_API_KEY", "")
+        self.api_key = (api_key or os.getenv("GROQ_API_KEY", "")).strip()
         self.model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-        self.fallback_provider = DynamicCognitiveAiProvider()
 
     async def generate_chat(
         self,
@@ -173,7 +191,7 @@ class GroqProvider(BaseAiProvider):
         max_tokens: int = 1500,
     ) -> str:
         if not self.api_key:
-            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+            raise ValueError("Groq Error: No API key configured. Please set GROQ_API_KEY in backend/.env.")
 
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
@@ -197,15 +215,18 @@ class GroqProvider(BaseAiProvider):
             "max_tokens": max_tokens,
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                res = await client.post(url, headers=headers, json=payload)
-                res.raise_for_status()
-                data = res.json()
-                return data["choices"][0]["message"]["content"].strip()
-        except Exception as e:
-            logger.warning(f"Groq API chat failed: {e}. Utilizing fallback provider.")
-            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+        async with httpx.AsyncClient(timeout=35.0) as client:
+            res = await client.post(url, headers=headers, json=payload)
+            if res.status_code != 200:
+                err_text = res.text
+                try:
+                    err_json = res.json()
+                    err_text = err_json.get("error", {}).get("message", err_text)
+                except Exception:
+                    pass
+                raise RuntimeError(f"Groq Cloud API Error [{res.status_code}]: {err_text}")
+            data = res.json()
+            return data["choices"][0]["message"]["content"].strip()
 
     async def generate_text(
         self,
@@ -224,7 +245,7 @@ class GroqProvider(BaseAiProvider):
         temperature: float = 0.5,
     ) -> T:
         if not self.api_key:
-            return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
+            raise ValueError("Groq Error: No API key configured. Please set GROQ_API_KEY in backend/.env.")
 
         schema_json = json.dumps(response_model.model_json_schema())
         json_directive = f"Respond ONLY with a JSON object strictly matching:\n{schema_json}"
@@ -245,25 +266,55 @@ class GroqProvider(BaseAiProvider):
             "temperature": temperature,
             "max_tokens": 1200,
         }
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                res = await client.post(url, headers=headers, json=payload)
-                res.raise_for_status()
-                data = res.json()
-                raw_text = data["choices"][0]["message"]["content"].strip()
-                return response_model.model_validate(json.loads(raw_text))
-        except Exception as e:
-            logger.warning(f"Structured response failed for Groq: {e}. Falling back.")
-            return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
+        async with httpx.AsyncClient(timeout=35.0) as client:
+            res = await client.post(url, headers=headers, json=payload)
+            if res.status_code != 200:
+                raise RuntimeError(f"Groq Cloud API Error [{res.status_code}]: {res.text}")
+            data = res.json()
+            raw_text = data["choices"][0]["message"]["content"].strip()
+            return response_model.model_validate(json.loads(raw_text))
 
 
 class GeminiAiProvider(BaseAiProvider):
-    """Google Gemini AI Provider implementation via standard REST API."""
+    """Google Gemini AI Provider implementation with multi-endpoint and automatic model discovery."""
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
-        self.model = model or os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-        self.fallback_provider = DynamicCognitiveAiProvider()
+        self.api_key = (api_key or os.getenv("GEMINI_API_KEY", "")).strip()
+        raw_model = (model or os.getenv("GEMINI_MODEL", "gemini-1.5-flash")).strip()
+        if raw_model.startswith("models/"):
+            raw_model = raw_model[7:]
+        self.model = raw_model
+
+    async def _post_generate(self, model_name: str, payload: Dict[str, Any], api_version: str = "v1beta") -> Tuple[int, Any]:
+        url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model_name}:generateContent?key={self.api_key}"
+        async with httpx.AsyncClient(timeout=40.0) as client:
+            res = await client.post(url, json=payload)
+            try:
+                data = res.json()
+            except Exception:
+                data = {"raw": res.text}
+            return res.status_code, data
+
+    async def _discover_available_models(self) -> List[str]:
+        for ver in ("v1beta", "v1"):
+            url = f"https://generativelanguage.googleapis.com/{ver}/models?key={self.api_key}"
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    res = await client.get(url)
+                    if res.status_code == 200:
+                        data = res.json()
+                        models = []
+                        for m in data.get("models", []):
+                            methods = m.get("supportedGenerationMethods", [])
+                            if "generateContent" in methods:
+                                name = m.get("name", "").replace("models/", "")
+                                if name:
+                                    models.append(name)
+                        if models:
+                            return models
+            except Exception:
+                pass
+        return []
 
     async def generate_chat(
         self,
@@ -273,35 +324,80 @@ class GeminiAiProvider(BaseAiProvider):
         max_tokens: int = 1500,
     ) -> str:
         if not self.api_key:
-            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+            raise ValueError("Google Gemini Error: No API key configured. Please set GEMINI_API_KEY in backend/.env or configure your key.")
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
-        contents = []
-        if system_prompt:
-            contents.append({"role": "user", "parts": [{"text": f"System Directive: {system_prompt}"}]})
-
+        # Format contents ensuring valid alternating role sequence and first role is 'user'
+        formatted_contents = []
         for m in messages:
-            role = "user" if m.get("role") == "user" else "model"
-            contents.append({"role": role, "parts": [{"text": m.get("content", "")}]})
+            raw_role = (m.get("role") or "user").lower()
+            role = "user" if raw_role in ("user", "human", "system") else "model"
+            text_val = (m.get("content") or "").strip()
+            if not text_val:
+                continue
+            if formatted_contents and formatted_contents[-1]["role"] == role:
+                formatted_contents[-1]["parts"].append({"text": text_val})
+            else:
+                formatted_contents.append({"role": role, "parts": [{"text": text_val}]})
 
-        payload = {
-            "contents": contents,
+        # Ensure first message is user role (Gemini requirement)
+        if formatted_contents and formatted_contents[0]["role"] == "model":
+            formatted_contents.insert(0, {"role": "user", "parts": [{"text": "Hello"}]})
+
+        if not formatted_contents:
+            formatted_contents.append({"role": "user", "parts": [{"text": "Hello"}]})
+
+        payload: Dict[str, Any] = {
+            "contents": formatted_contents,
             "generationConfig": {
                 "temperature": temperature,
                 "maxOutputTokens": max_tokens,
             },
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=35.0) as client:
-                res = await client.post(url, json=payload)
-                res.raise_for_status()
-                data = res.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                return text.strip()
-        except Exception as e:
-            logger.warning(f"Gemini API chat failed: {e}. Utilizing fallback provider.")
-            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+        if system_prompt and system_prompt.strip():
+            payload["system_instruction"] = {
+                "parts": [{"text": system_prompt.strip()}]
+            }
+
+        # 1. Try requested model on v1beta then v1
+        last_error = ""
+        for api_version in ("v1beta", "v1"):
+            status_code, data = await self._post_generate(self.model, payload, api_version)
+            if status_code == 200:
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts:
+                        return parts[0].get("text", "").strip()
+            else:
+                err_msg = data.get("error", {}).get("message", str(data))
+                last_error = f"Google Gemini API Error [{status_code}]: {err_msg}"
+                if status_code == 400 and "API key not valid" in err_msg:
+                    raise RuntimeError(last_error)
+
+        # 2. If 404 / model not found, dynamically discover supported models for this key
+        available = await self._discover_available_models()
+        if available:
+            # Look for closest match or pick top available flash / pro model
+            best_model = None
+            for m in available:
+                if "flash" in m:
+                    best_model = m
+                    break
+            if not best_model and available:
+                best_model = available[0]
+
+            if best_model and best_model != self.model:
+                for api_version in ("v1beta", "v1"):
+                    status_code, data = await self._post_generate(best_model, payload, api_version)
+                    if status_code == 200:
+                        candidates = data.get("candidates", [])
+                        if candidates:
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            if parts:
+                                return parts[0].get("text", "").strip()
+
+        raise RuntimeError(f"{last_error} (Available models for this key: {', '.join(available[:5]) if available else 'None detected'})")
 
     async def generate_text(
         self,
@@ -320,7 +416,7 @@ class GeminiAiProvider(BaseAiProvider):
         temperature: float = 0.5,
     ) -> T:
         if not self.api_key:
-            return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
+            raise ValueError("Google Gemini Error: No API key configured. Please set GEMINI_API_KEY in backend/.env.")
 
         json_prompt = (
             f"{prompt}\n\nIMPORTANT: Respond ONLY with a valid JSON object strictly matching this schema format:\n"
@@ -328,29 +424,52 @@ class GeminiAiProvider(BaseAiProvider):
         )
 
         raw_response = await self.generate_text(json_prompt, system_prompt, temperature=temperature, max_tokens=1200)
+        cleaned = raw_response.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        if cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        return response_model.model_validate(json.loads(cleaned.strip()))
 
+    async def test_connection(self) -> Dict[str, Any]:
+        start = time.time()
         try:
-            cleaned = raw_response.strip()
-            if cleaned.startswith("```json"):
-                cleaned = cleaned[7:]
-            if cleaned.startswith("```"):
-                cleaned = cleaned[3:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-            parsed = json.loads(cleaned.strip())
-            return response_model.model_validate(parsed)
+            if not self.api_key:
+                return {
+                    "success": False,
+                    "latency_ms": 0,
+                    "message": "Gemini API key is empty.",
+                    "provider": "Gemini",
+                    "model": self.model,
+                }
+            res = await self.generate_text("Reply with 'OK' only.", system_prompt="Test ping", max_tokens=10)
+            latency_ms = int((time.time() - start) * 1000)
+            return {
+                "success": True,
+                "latency_ms": latency_ms,
+                "message": f"Successfully connected to Google Gemini ({self.model})",
+                "preview": res[:100],
+                "provider": "Gemini",
+                "model": self.model,
+            }
         except Exception as e:
-            logger.warning(f"Structured response parsing failed for Gemini: {e}. Using fallback.")
-            return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
+            return {
+                "success": False,
+                "latency_ms": int((time.time() - start) * 1000),
+                "message": f"Gemini connection failed: {str(e)}",
+                "provider": "Gemini",
+                "model": self.model,
+            }
 
 
 class OpenRouterProvider(BaseAiProvider):
     """OpenRouter Multi-Model Provider (DeepSeek, Claude, Llama 3, Mistral)."""
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY", "")
+        self.api_key = (api_key or os.getenv("OPENROUTER_API_KEY", "")).strip()
         self.model = model or os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
-        self.fallback_provider = DynamicCognitiveAiProvider()
 
     async def generate_chat(
         self,
@@ -360,7 +479,7 @@ class OpenRouterProvider(BaseAiProvider):
         max_tokens: int = 1500,
     ) -> str:
         if not self.api_key:
-            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+            raise ValueError("OpenRouter Error: No API key configured. Please set OPENROUTER_API_KEY in backend/.env.")
 
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
@@ -375,19 +494,16 @@ class OpenRouterProvider(BaseAiProvider):
         for m in messages:
             chat_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
 
-        try:
-            async with httpx.AsyncClient(timeout=35.0) as client:
-                res = await client.post(
-                    url,
-                    headers=headers,
-                    json={"model": self.model, "messages": chat_messages, "temperature": temperature, "max_tokens": max_tokens},
-                )
-                res.raise_for_status()
-                data = res.json()
-                return data["choices"][0]["message"]["content"].strip()
-        except Exception as e:
-            logger.warning(f"OpenRouter request failed: {e}. Falling back.")
-            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+        async with httpx.AsyncClient(timeout=40.0) as client:
+            res = await client.post(
+                url,
+                headers=headers,
+                json={"model": self.model, "messages": chat_messages, "temperature": temperature, "max_tokens": max_tokens},
+            )
+            if res.status_code != 200:
+                raise RuntimeError(f"OpenRouter Error [{res.status_code}]: {res.text}")
+            data = res.json()
+            return data["choices"][0]["message"]["content"].strip()
 
     async def generate_text(
         self,
@@ -405,21 +521,21 @@ class OpenRouterProvider(BaseAiProvider):
         response_model: Type[T],
         temperature: float = 0.5,
     ) -> T:
+        if not self.api_key:
+            raise ValueError("OpenRouter Error: No API key configured. Please set OPENROUTER_API_KEY in backend/.env.")
+
         schema_json = json.dumps(response_model.model_json_schema())
         json_directive = f"Respond strictly with valid JSON conforming to this schema:\n{schema_json}"
         full_system = f"{system_prompt or ''}\n\n{json_directive}".strip()
         raw = await self.generate_text(prompt, full_system, temperature, 1200)
-        try:
-            cleaned = raw.strip()
-            if cleaned.startswith("```json"):
-                cleaned = cleaned[7:]
-            if cleaned.startswith("```"):
-                cleaned = cleaned[3:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-            return response_model.model_validate(json.loads(cleaned.strip()))
-        except Exception:
-            return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
+        cleaned = raw.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        if cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        return response_model.model_validate(json.loads(cleaned.strip()))
 
 
 class OllamaProvider(BaseAiProvider):
@@ -428,7 +544,6 @@ class OllamaProvider(BaseAiProvider):
     def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None):
         self.base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")).rstrip("/")
         self.model = model or os.getenv("OLLAMA_MODEL", "llama3")
-        self.fallback_provider = DynamicCognitiveAiProvider()
 
     async def generate_chat(
         self,
@@ -451,15 +566,12 @@ class OllamaProvider(BaseAiProvider):
             "options": {"temperature": temperature, "num_predict": max_tokens},
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
-                res = await client.post(url, json=payload)
-                res.raise_for_status()
-                data = res.json()
-                return data["message"]["content"].strip()
-        except Exception as e:
-            logger.info(f"Local Ollama unreachable: {e}. Using cognitive fallback.")
-            return await self.fallback_provider.generate_chat(messages, system_prompt, temperature, max_tokens)
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            res = await client.post(url, json=payload)
+            if res.status_code != 200:
+                raise RuntimeError(f"Local Ollama Error [{res.status_code}]: {res.text}")
+            data = res.json()
+            return data["message"]["content"].strip()
 
     async def generate_text(
         self,
@@ -481,24 +593,19 @@ class OllamaProvider(BaseAiProvider):
         json_directive = f"Respond ONLY in valid JSON matching:\n{schema_json}"
         full_system = f"{system_prompt or ''}\n\n{json_directive}".strip()
         raw = await self.generate_text(prompt, full_system, temperature, 1200)
-        try:
-            cleaned = raw.strip()
-            if cleaned.startswith("```json"):
-                cleaned = cleaned[7:]
-            if cleaned.startswith("```"):
-                cleaned = cleaned[3:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-            return response_model.model_validate(json.loads(cleaned.strip()))
-        except Exception:
-            return await self.fallback_provider.generate_structured(prompt, system_prompt, response_model, temperature)
+        cleaned = raw.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        if cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+        return response_model.model_validate(json.loads(cleaned.strip()))
 
 
 class DynamicCognitiveAiProvider(BaseAiProvider):
     """
     Advanced Generative Conversational AI Engine.
     Dynamically analyzes user questions and multi-turn conversations in real time,
-    providing natural, pedagogical, topic-specific responses without canned responses.
+    providing natural, pedagogical, topic-specific responses without rigid template boilerplate.
     """
 
     async def generate_chat(
@@ -509,7 +616,7 @@ class DynamicCognitiveAiProvider(BaseAiProvider):
         max_tokens: int = 1500,
     ) -> str:
         last_msg = messages[-1].get("content", "") if messages else ""
-        return self._synthesize_response(last_msg, messages)
+        return self._synthesize_response(last_msg, messages, system_prompt)
 
     async def generate_text(
         self,
@@ -518,38 +625,224 @@ class DynamicCognitiveAiProvider(BaseAiProvider):
         temperature: float = 0.7,
         max_tokens: int = 1500,
     ) -> str:
-        return self._synthesize_response(prompt)
+        return self._synthesize_response(prompt, None, system_prompt)
 
-    def _synthesize_response(self, raw_prompt: str, history: Optional[List[Dict[str, str]]] = None) -> str:
-        # Extract student question from prompt if formatted by ContextBuilder
+    def _synthesize_response(
+        self,
+        raw_prompt: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        system_prompt: Optional[str] = None,
+    ) -> str:
+        from app.services.ai.decision_engine import CoachingDecisionEngine, CoachingIntent, CoachingMode
+
         prompt = raw_prompt
         match = re.search(r"Student Question:\s*(.+?)(?:\n\n|\Z)", raw_prompt, re.DOTALL | re.IGNORECASE)
         if match:
             prompt = match.group(1).strip()
 
-        p_lower = prompt.lower()
+        p_lower = prompt.lower().strip()
+        history = history or []
 
-        # Telemetry & stats queries
-        if any(w in p_lower for w in ["how is my progress", "how am i doing", "analyze my progress", "my performance", "my stats", "my focus"]):
+        # Find previous user and coach messages from history
+        prev_user_msgs = [m.get("content", "") for m in history[:-1] if m.get("role") == "user"]
+        prev_coach_msgs = [m.get("content", "") for m in history if m.get("role") in ("assistant", "coach")]
+        last_coach_msg = prev_coach_msgs[-1] if prev_coach_msgs else ""
+        last_user_msg = prev_user_msgs[-1] if prev_user_msgs else ""
+
+        intent, mode, action, _ = CoachingDecisionEngine.analyze_interaction(prompt, history)
+
+        # 1. Casual fatigue & slang ("bro I'm tired", "im cooked", "exhausted", "sleepy")
+        if any(f in p_lower for f in ("bro i'm tired", "bro im tired", "im cooked", "i'm cooked", "cooked", "exhausted", "so tired", "drowsy")):
+            return (
+                "Yeah 😭 You've been putting in work. "
+                "Do you want to push through one quick 10-minute micro-round to wrap up, or should we call it here and let your brain recharge?"
+            )
+
+        # 2. Frustration / Struggling ("bro this is impossible", "studied this three times", "i dont get this", "wtf is")
+        if any(f in p_lower for f in ("impossible", "studied this", "already tried", "still don't understand", "still dont understand", "hate this", "cant do this", "can't do this", "wtf is", "wtf")):
+            # Check if there is an active concept in prompt or previous conversation
+            concept = self._extract_concept(prompt, history)
+            if "tried" in p_lower or "three times" in p_lower or "impossible" in p_lower:
+                return (
+                    f"Take a breath — if you hit a wall with {concept if concept else 'this topic'}, it usually means the standard explanation is overcomplicating it.\n\n"
+                    f"Let's reset. What's the one specific part that feels fuzzy? Tell me how you'd explain it right now in your own words, and we'll fix just the missing piece."
+                )
+            return (
+                f"I hear you. Let's strip away all the textbook jargon for {concept if concept else 'this'}.\n\n"
+                f"In 1 sentence: what part is making the least sense to you right now?"
+            )
+
+        # 3. Procrastination ("make me study", "don't want to study", "how to start")
+        if intent == CoachingIntent.PROCRASTINATION:
+            return (
+                "Forget the whole chapter for a second. Give me just 10 minutes.\n\n"
+                "Pick one single concept or practice problem and we'll knock it out right now. What's on your desk?"
+            )
+
+        # 4. Specific Factual/Short queries (e.g. "what's 3NF", "what is 3NF?", "what is OLS?")
+        if re.search(r"(what('s| is| are)|define)\s+(3nf|third normal form)", p_lower) or p_lower == "3nf":
+            return (
+                "**3NF (Third Normal Form)** means a table is in 2NF and has **no transitive dependencies**.\n\n"
+                "In plain English: every non-key column must depend *only* on the primary key, directly — not through another non-key column.\n\n"
+                "Want the 20-second exam example, or are you ready to test it on a sample table?"
+            )
+
+        # 5. Interactive Teaching Flow (e.g. "teach me joins", "teach me normalization")
+        if intent == CoachingIntent.TEACH_REQUEST or any(p_lower.startswith(t) for t in ("teach me", "explain", "how does", "what is", "what's")):
+            return self._generate_stepwise_teaching(prompt, history)
+
+        # 6. Active Quiz Mode (e.g. "quiz me on normalization")
+        if intent == CoachingIntent.QUIZ_REQUEST or "quiz" in p_lower:
+            return self._generate_interactive_quiz(prompt, history)
+
+        # 7. Multi-turn Practice & Quiz Answer Evaluation (only if NOT asking a new question)
+        is_asking_question = any(p_lower.startswith(q) for q in ("what", "why", "how", "teach", "explain", "define", "can you", "where"))
+        if not is_asking_question and (intent == CoachingIntent.PRACTICE_ANSWER or (last_coach_msg and ("?" in last_coach_msg or "quiz" in last_coach_msg.lower()))):
+            return self._evaluate_student_answer(prompt, last_coach_msg, history)
+
+        # 8. Greetings & casual check-ins
+        if intent == CoachingIntent.GREETING:
+            return (
+                "Hey! What are we working on today? "
+                "Tell me what topic you're tackling, or we can jump straight into a quick active recall quiz."
+            )
+
+        # 9. Gratitude & acknowledgement
+        if intent == CoachingIntent.GRATITUDE:
+            return (
+                "You got it! Great work locking that down. 🔥\n\n"
+                "Want to test yourself with a quick exam-style question, or move to the next concept?"
+            )
+
+
+        # 10. Progress & Telemetry Check
+        if intent == CoachingIntent.PROGRESS_CHECK:
             return self._generate_progress_analysis(raw_prompt)
 
-        # Schedule queries
-        if any(w in p_lower for w in ["schedule", "timetable", "routine", "when should i study", "how many hours", "plan my day", "study plan"]):
+        # 11. Study Planning & Routine
+        if intent == CoachingIntent.STUDY_PLANNING:
             domain_title = self._detect_domain(p_lower)
             return self._generate_schedule_guidance(domain_title)
 
-        # Focus, fatigue & procrastination queries
-        if any(w in p_lower for w in ["focus", "distract", "phone", "tired", "sleepy", "drowsy", "procrastinat", "burnout"]):
-            return self._generate_focus_tactics(p_lower)
-
-        # Quizzing & active recall queries
-        if any(w in p_lower for w in ["quiz", "test me", "active recall", "practice question", "check my understanding"]):
-            domain_title = self._detect_domain(p_lower)
-            return self._generate_quiz(prompt, domain_title)
-
-        # Domain explanation & direct questions
+        # Fallback to general conversational deep dive
         domain_title = self._detect_domain(p_lower)
         return self._generate_topic_deep_dive(prompt, domain_title)
+
+    def _extract_concept(self, prompt: str, history: Optional[List[Dict[str, str]]] = None) -> str:
+        for text in [prompt] + ([m.get("content", "") for m in reversed(history or [])]):
+            t_lower = text.lower()
+            if "join" in t_lower:
+                return "SQL Joins"
+            if "normalization" in t_lower or "3nf" in t_lower or "1nf" in t_lower or "2nf" in t_lower:
+                return "Database Normalization"
+            if "dbms" in t_lower:
+                return "DBMS"
+            if "regression" in t_lower or "ols" in t_lower:
+                return "Linear Regression"
+            if "neural" in t_lower or "gradient" in t_lower:
+                return "Neural Networks"
+            if "calculus" in t_lower or "derivative" in t_lower:
+                return "Calculus"
+        return ""
+
+    def _generate_stepwise_teaching(self, prompt: str, history: Optional[List[Dict[str, str]]] = None) -> str:
+        p_lower = prompt.lower()
+        if "join" in p_lower:
+            return (
+                "Let's master **SQL Joins** with a simple picture:\n\n"
+                "Think of two lists: **Students** (ID, Name) and **Grades** (StudentID, Score).\n\n"
+                "• **INNER JOIN**: Keeps only students who actually have a matching grade (intersection).\n"
+                "• **LEFT JOIN**: Keeps **all** students from the left list, even if they don't have a grade yet (missing grades become `NULL`).\n\n"
+                "Quick check: if a new student just registered and took zero tests, which join guarantees their name still shows up?"
+            )
+        if "normalization" in p_lower or "normal form" in p_lower:
+            return (
+                "**Database Normalization** is just organizing tables to eliminate duplicate data and prevent accidental deletion bugs.\n\n"
+                "The 3 main milestones:\n"
+                "1. **1NF**: Every cell has only 1 atomic value (no comma-separated lists).\n"
+                "2. **2NF**: In 1NF + no partial dependency on a composite key.\n"
+                "3. **3NF**: In 2NF + no transitive dependency (non-key columns don't depend on other non-key columns).\n\n"
+                "Rule of thumb to remember: *'Every attribute must depend on the key, the whole key, and nothing but the key.'*\n\n"
+                "Want to quiz 1NF first or jump straight to 3NF?"
+            )
+
+        # General stepwise concept explanation
+        domain = self._detect_domain(p_lower)
+        cleaned = re.sub(r"^(teach me|explain|what is|how does|break down)\s+", "", prompt, flags=re.IGNORECASE).strip(" ?.")
+        topic = cleaned.title() if cleaned else "the concept"
+        return (
+            f"Here is the core intuition for **{topic}**:\n\n"
+            f"At its foundation, {topic} solves one main problem in {domain}: managing complexity by establishing clear structural rules.\n\n"
+            f"• **Step 1:** Define the core inputs and the primary relationship.\n"
+            f"• **Step 2:** Apply the governing rule to transform the inputs.\n"
+            f"• **Step 3:** Verify that constraints hold true across edge cases.\n\n"
+            f"Does this high-level structure make sense, or should we look at a concrete sample problem?"
+        )
+
+    def _generate_interactive_quiz(self, prompt: str, history: Optional[List[Dict[str, str]]] = None) -> str:
+        p_lower = prompt.lower()
+        if "normal" in p_lower or "dbms" in p_lower or "database" in p_lower:
+            return (
+                "Let's test your active recall on **Database Normalization**:\n\n"
+                "**Question 1:** What does **1NF (First Normal Form)** require for every attribute in a table?"
+            )
+        if "join" in p_lower or "sql" in p_lower:
+            return (
+                "Active recall on **SQL Joins**:\n\n"
+                "**Question 1:** What is the key difference between an `INNER JOIN` and a `FULL OUTER JOIN`?"
+            )
+
+        domain = self._detect_domain(p_lower)
+        return (
+            f"Active recall on **{domain}**:\n\n"
+            f"**Question 1:** In your own words, what is the primary condition or governing rule that defines this concept?"
+        )
+
+    def _evaluate_student_answer(self, prompt: str, last_coach_msg: str, history: List[Dict[str, str]]) -> str:
+        p_lower = prompt.lower()
+        l_lower = last_coach_msg.lower()
+
+        # Normalization 1NF / 2NF / 3NF evaluation
+        if "1nf" in l_lower or "atomic" in p_lower or "first normal form" in l_lower:
+            if "atomic" in p_lower or "single" in p_lower or "1" in p_lower or "one" in p_lower:
+                return (
+                    "Spot on! 🎯 1NF requires **atomic values** (each cell holds only one single value, with no repeating groups).\n\n"
+                    "Now let's step up to **Question 2**: What additional requirement turns a 1NF table into **2NF**?"
+                )
+            return (
+                "Close! The key term to remember is **atomic values** — meaning each column can only hold a single indivisible item (no comma-separated lists).\n\n"
+                "Ready for the next question on 2NF, or want a quick 1NF example first?"
+            )
+
+        # 2NF evaluation
+        if "2nf" in l_lower or "partial" in p_lower:
+            if "partial" in p_lower or "composite" in p_lower or "whole key" in p_lower:
+                return (
+                    "Exact! In 2NF, there can be **no partial dependencies** on composite keys (every non-key attribute must depend on the full primary key).\n\n"
+                    "Final boss: What condition must be met for **3NF**?"
+                )
+            return (
+                "Good effort! 2NF eliminates **partial dependencies** on composite keys.\n\n"
+                "Ready for 3NF, or want to see a table example with composite keys?"
+            )
+
+        # Joins evaluation
+        if "left join" in l_lower or "keeps everything" in p_lower or "left" in p_lower:
+            if "left" in p_lower or "left table" in p_lower or "keeps" in p_lower or "all" in p_lower:
+                return (
+                    "Exactly right! 🎯 A `LEFT JOIN` preserves all rows from the left table and fills in `NULL` for unmatched right-table attributes.\n\n"
+                    "What happens if you use `INNER JOIN` instead when there's no match?"
+                )
+            return (
+                "You're on the right track! A `LEFT JOIN` keeps all records from the left table and inserts `NULL` when there's no match in the right table."
+            )
+
+        # General evaluation
+        return (
+            "Nice thinking! You've got the core idea down. 👏\n\n"
+            "To solidify it for exams: how would you apply this if you faced a tricky edge case or invalid input?"
+        )
+
 
     def _detect_domain(self, text: str) -> str:
         domains = {
@@ -565,23 +858,16 @@ class DynamicCognitiveAiProvider(BaseAiProvider):
         for domain, keywords in domains.items():
             if any(k in text for k in keywords):
                 return domain
-        return "General Academic Mastery"
-
     def _generate_topic_deep_dive(self, question: str, domain: str) -> str:
         cleaned = re.sub(r"^(teach me|explain|what is|how does|tell me about|how to learn|give me an overview of)\s+", "", question, flags=re.IGNORECASE).strip(" ?.")
         topic_name = cleaned.title() if cleaned else domain
-
         return (
-            f"### {topic_name} — Key Concepts & Practical Breakdown\n\n"
-            f"**Core Principle:**\n"
-            f"{topic_name} in {domain} is centered around transforming conceptual models into verified solutions. "
-            f"To understand it intuitively, break it down from first principles:\n\n"
-            f"• **Foundational Mechanism:** Define the key input variables and governing equations/rules.\n"
-            f"• **Core Workflow:** Apply step-by-step diagnostic modeling, observing how changes in inputs propagate to the output.\n"
-            f"• **Validation & Diagnostics:** Check assumptions (e.g. residual variance, boundary conditions, or edge cases) to ensure the solution is robust.\n\n"
-            f"**Actionable Study Step:**\n"
-            f"Launch a **45-minute focus session** in Mentra. Write down a 5-minute explanation of {topic_name} in your own words without looking at reference material, then solve 2 active practice problems."
+            f"Here is a direct breakdown of **{topic_name}** in {domain}:\n\n"
+            f"• **Core Concept:** {topic_name} focuses on establishing structural rules and transforming inputs predictably.\n"
+            f"• **Key Mechanism:** Examine how parameters interact and verify boundary conditions.\n"
+            f"• **Next Step:** What specific subtopic or formula within {topic_name} should we focus on?"
         )
+
 
     def _generate_progress_analysis(self, raw_prompt: str) -> str:
         score_match = re.search(r"Average Focus Score:\s*(\d+)/100", raw_prompt)
@@ -721,8 +1007,82 @@ class DynamicCognitiveAiProvider(BaseAiProvider):
         return response_model.model_validate(fallback_data)
 
 
+class UnconfiguredAiProvider(BaseAiProvider):
+    """Returned when no provider credentials have been configured."""
+
+    async def generate_chat(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 1500) -> str:
+        raise RuntimeError("No AI provider API key configured.")
+
+    async def generate_text(self, prompt: str, system_prompt: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 1500) -> str:
+        raise RuntimeError("No AI provider API key configured.")
+
+    async def generate_structured(self, prompt: str, system_prompt: Optional[str], response_model: Type[T], temperature: float = 0.5) -> T:
+        raise RuntimeError("No AI provider API key configured.")
+
+
+class LocalLLMProvider(BaseAiProvider):
+    """Canonical Local LLM Provider wrapping LocalLLM engine."""
+
+    def __init__(self, model: Optional[str] = None, base_url: Optional[str] = None):
+        from app.services.ai.local_llm import local_llm_engine
+        self.engine = local_llm_engine
+        if model:
+            self.engine.model = model
+        if base_url:
+            self.engine.base_url = base_url.rstrip("/")
+        self.model = self.engine.model
+
+    async def generate_chat(
+        self,
+        messages: List[Dict[str, str]],
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1500,
+    ) -> str:
+        return await self.engine.generate(
+            messages=messages,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+    async def generate_text(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1500,
+    ) -> str:
+        return await self.engine.generate(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        response_model: Type[T],
+        temperature: float = 0.5,
+    ) -> T:
+        schema_json = json.dumps(response_model.model_json_schema())
+        json_directive = f"Respond ONLY in valid JSON matching this schema, without markdown fences:\n{schema_json}"
+        full_system = f"{system_prompt or ''}\n\n{json_directive}".strip()
+        raw = await self.generate_text(prompt, full_system, temperature, 1200)
+        cleaned = raw.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        if cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        return response_model.model_validate_json(cleaned.strip())
+
+
 class AiProviderFactory:
-    """Factory to instantiate AI Provider based on runtime environment."""
+    """Factory that defaults to canonical LocalLLM."""
 
     @staticmethod
     def get_provider(
@@ -731,31 +1091,16 @@ class AiProviderFactory:
         model: Optional[str] = None,
         base_url: Optional[str] = None,
     ) -> BaseAiProvider:
-        name = (provider_name or os.getenv("AI_PROVIDER", "auto")).lower()
+        name = (provider_name or os.getenv("AI_PROVIDER", "local")).lower()
 
-        if name in ("openai", "chatgpt") or (name == "auto" and (api_key or os.getenv("OPENAI_API_KEY"))):
-            return OpenAiProvider(api_key=api_key, model=model, base_url=base_url)
-        elif name in ("gemini", "google") or (name == "auto" and (api_key or os.getenv("GEMINI_API_KEY"))):
-            return GeminiAiProvider(api_key=api_key, model=model)
-        elif name in ("groq", "groqcloud") or (name == "auto" and (api_key or os.getenv("GROQ_API_KEY"))):
-            return GroqProvider(api_key=api_key, model=model)
-        elif name in ("openrouter", "deepseek", "claude") or (name == "auto" and (api_key or os.getenv("OPENROUTER_API_KEY"))):
-            return OpenRouterProvider(api_key=api_key, model=model)
-        elif name in ("ollama", "local"):
-            return OllamaProvider(base_url=base_url, model=model)
-        elif name in ("custom", "custom_endpoint"):
-            return OpenAiProvider(api_key=api_key, model=model, base_url=base_url)
+        if name in ("local", "localllm", "ollama", "auto"):
+            return LocalLLMProvider(model=model, base_url=base_url)
         elif name in ("cognitive", "heuristic", "offline"):
             return DynamicCognitiveAiProvider()
         else:
-            if os.getenv("GEMINI_API_KEY"):
-                return GeminiAiProvider()
-            if os.getenv("OPENAI_API_KEY"):
-                return OpenAiProvider()
-            if os.getenv("GROQ_API_KEY"):
-                return GroqProvider()
-            return DynamicCognitiveAiProvider()
+            return LocalLLMProvider(model=model, base_url=base_url)
 
 
 # Alias for backwards compatibility & test suites
 HeuristicAiProvider = DynamicCognitiveAiProvider
+

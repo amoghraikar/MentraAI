@@ -34,11 +34,12 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
     with SingleTickerProviderStateMixin {
   bool _isCameraEnabled = true;
   bool _showCvOverlay = true;
+  bool _showDiagnostics = false;
   bool _isMirrored = true;
   late final AnimationController _pulseController;
 
   // Real-time live CV Telemetry state from real camera feed
-  RealTimeCvTelemetry _telemetry = RealTimeCvTelemetry.defaultFace();
+  RealTimeCvTelemetry _telemetry = RealTimeCvTelemetry.uninitialized();
 
   @override
   void initState() {
@@ -68,19 +69,14 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
           timestamp: now,
           isFaceDetected: false,
           faceConfidence: 0.0,
+          ear: newTelemetry.ear,
+          yaw: newTelemetry.yaw,
+          pitch: newTelemetry.pitch,
+          roll: newTelemetry.roll,
+          focusState: 'FACE_NOT_DETECTED',
         );
-      } else if (newTelemetry.ear < 0.16) {
-        // Real eye closure / drowsiness detected from video pixels
-        obs = FocusObservation(
-          timestamp: now,
-          isFaceDetected: true,
-          faceBoundingBox: newTelemetry.box,
-          faceConfidence: newTelemetry.confidence,
-          eyeState: EyeState.closed,
-          eyeOpenProbability: 0.05,
-        );
-      } else if (newTelemetry.yaw.abs() > 14.0 || newTelemetry.pitch.abs() > 13.0) {
-        // Real head turned away / distraction
+      } else if (newTelemetry.phoneDetected) {
+        // Real Phone Detected by local YOLO
         obs = FocusObservation(
           timestamp: now,
           isFaceDetected: true,
@@ -88,8 +84,47 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
           faceConfidence: newTelemetry.confidence,
           eyeState: EyeState.open,
           isDistractionDetected: true,
-          distractionConfidence: 0.92,
-          distractionType: newTelemetry.pitch > 13.0 ? 'looking_down' : 'looking_away',
+          distractionConfidence: newTelemetry.phoneConfidence,
+          distractionType: 'phone',
+          phoneDetected: true,
+          phoneConfidence: newTelemetry.phoneConfidence,
+          ear: newTelemetry.ear,
+          yaw: newTelemetry.yaw,
+          pitch: newTelemetry.pitch,
+          roll: newTelemetry.roll,
+          focusState: 'PHONE_DETECTED',
+        );
+      } else if (newTelemetry.focusState == 'POSSIBLE_DROWSINESS' || newTelemetry.ear < 0.20) {
+        // Real eye closure / drowsiness detected from real landmarks
+        obs = FocusObservation(
+          timestamp: now,
+          isFaceDetected: true,
+          faceBoundingBox: newTelemetry.box,
+          faceConfidence: newTelemetry.confidence,
+          eyeState: EyeState.closed,
+          eyeOpenProbability: 0.05,
+          ear: newTelemetry.ear,
+          yaw: newTelemetry.yaw,
+          pitch: newTelemetry.pitch,
+          roll: newTelemetry.roll,
+          focusState: 'POSSIBLE_DROWSINESS',
+        );
+      } else if (newTelemetry.orientation == 'LOOKING_AWAY' || newTelemetry.orientation == 'LOOKING_DOWN') {
+        // Real head turned away or pitched downward
+        obs = FocusObservation(
+          timestamp: now,
+          isFaceDetected: true,
+          faceBoundingBox: newTelemetry.box,
+          faceConfidence: newTelemetry.confidence,
+          eyeState: EyeState.open,
+          isDistractionDetected: true,
+          distractionConfidence: 0.90,
+          distractionType: newTelemetry.orientation == 'LOOKING_DOWN' ? 'looking_down' : 'looking_away',
+          ear: newTelemetry.ear,
+          yaw: newTelemetry.yaw,
+          pitch: newTelemetry.pitch,
+          roll: newTelemetry.roll,
+          focusState: newTelemetry.orientation,
         );
       } else {
         // Real focused state
@@ -100,6 +135,11 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
           faceConfidence: newTelemetry.confidence,
           eyeState: EyeState.open,
           eyeOpenProbability: 0.95,
+          ear: newTelemetry.ear,
+          yaw: newTelemetry.yaw,
+          pitch: newTelemetry.pitch,
+          roll: newTelemetry.roll,
+          focusState: 'FOCUSED',
         );
       }
 
@@ -384,6 +424,13 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
                     isActive: _isMirrored,
                     onPressed: () => setState(() => _isMirrored = !_isMirrored),
                   ),
+                  const SizedBox(width: AppSpacing.xs),
+                  _buildToolButton(
+                    icon: Icons.bug_report_outlined,
+                    tooltip: 'Developer CV Diagnostics',
+                    isActive: _showDiagnostics,
+                    onPressed: () => setState(() => _showDiagnostics = !_showDiagnostics),
+                  ),
                   if (widget.onClose != null) ...[
                     const SizedBox(width: AppSpacing.xs),
                     _buildToolButton(
@@ -396,6 +443,124 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
                 ],
               ),
             ),
+
+          // 4. Developer / Debug Diagnostics View Overlay
+          if (_showDiagnostics)
+            Positioned(
+              top: 42,
+              left: 10,
+              right: 10,
+              child: _buildDiagnosticsOverlay(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiagnosticsOverlay() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xEE090D13),
+        borderRadius: AppRadius.borderMd,
+        border: Border.all(color: const Color(0xFF388BFD), width: 1.2),
+        boxShadow: const [
+          BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 4)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.terminal_rounded, size: 13, color: Color(0xFF58A6FF)),
+                  SizedBox(width: 5),
+                  Text(
+                    'MENTRA CV DIAGNOSTICS (ON-DEVICE)',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF58A6FF),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              InkWell(
+                onTap: () => setState(() => _showDiagnostics = false),
+                child: const Icon(Icons.close, size: 13, color: Colors.white60),
+              ),
+            ],
+          ),
+          const Divider(height: 10, thickness: 0.8, color: Colors.white24),
+          _buildDiagRow('Camera Feed', _isCameraEnabled ? 'READY (Browser getUserMedia)' : 'MUTED / OFF'),
+          _buildDiagRow(
+            'Face Presence',
+            _telemetry.isFaceDetected
+                ? 'DETECTED (${(_telemetry.confidence * 100).toInt()}% conf)'
+                : 'ABSENT / NOT DETECTED',
+            color: _telemetry.isFaceDetected ? const Color(0xFF7EE787) : Colors.orangeAccent,
+          ),
+          _buildDiagRow(
+            'Eye Closure / EAR',
+            '${_telemetry.ear < 0.20 ? "CLOSED" : "OPEN"} (EAR: ${_telemetry.ear.toStringAsFixed(3)} | L:${_telemetry.leftEar.toStringAsFixed(2)} R:${_telemetry.rightEar.toStringAsFixed(2)})',
+            color: _telemetry.ear < 0.20 ? Colors.amberAccent : Colors.white70,
+          ),
+          _buildDiagRow(
+            'Head Pose (Euler)',
+            'Yaw: ${_telemetry.yaw > 0 ? "+" : ""}${_telemetry.yaw.toInt()}° | Pitch: ${_telemetry.pitch > 0 ? "+" : ""}${_telemetry.pitch.toInt()}° | Roll: ${_telemetry.roll.toInt()}°',
+            color: Colors.lightBlueAccent,
+          ),
+          _buildDiagRow('Orientation', _telemetry.orientation),
+          _buildDiagRow(
+            'Phone Detection',
+            _telemetry.phoneDetected
+                ? 'DETECTED (${(_telemetry.phoneConfidence * 100).toInt()}% conf)'
+                : 'NOT DETECTED (YOLOv8 Class 67)',
+            color: _telemetry.phoneDetected ? Colors.redAccent : Colors.white70,
+          ),
+          _buildDiagRow(
+            'Focus State',
+            _telemetry.focusState,
+            color: _telemetry.focusState == 'FOCUSED' ? const Color(0xFF7EE787) : Colors.amberAccent,
+          ),
+          _buildDiagRow(
+            'Engine Telemetry',
+            '${_telemetry.fps} FPS | Latency: ${_telemetry.latencyMs.toStringAsFixed(1)} ms',
+            color: Colors.white60,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiagRow(String label, String value, {Color color = Colors.white70}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1.5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w600,
+              color: Colors.white54,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              color: color,
+              fontFamily: 'monospace',
+            ),
+          ),
         ],
       ),
     );

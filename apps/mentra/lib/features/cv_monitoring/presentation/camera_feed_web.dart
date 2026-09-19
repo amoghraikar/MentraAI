@@ -1,12 +1,13 @@
 // ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use, unnecessary_cast
 import 'dart:async';
+import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 import 'package:flutter/material.dart';
 import '../domain/models/monitoring_models.dart';
 
 /// Web implementation of live camera feed using HTML5 VideoElement, getUserMedia,
-/// and client-side real-time Computer Vision frame processing.
+/// and local MediaPipe + YOLO on-device Computer Vision Engine via backend endpoint.
 Widget buildPlatformCameraView({
   required String viewId,
   required bool isMirrored,
@@ -41,26 +42,25 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
   Timer? _cvProcessingTimer;
 
   bool _isRegistered = false;
+  bool _isProcessingFrame = false;
   late final String _elementId;
+
+  static const String _cvEndpoint = 'http://127.0.0.1:8000/api/v1/cv/process-frame';
 
   // Real-time smoothed telemetry state
   double _smoothMinX = 0.25;
   double _smoothMinY = 0.18;
   double _smoothMaxX = 0.75;
   double _smoothMaxY = 0.76;
-  double _smoothYaw = 0.0;
-  double _smoothPitch = 0.0;
-  double _smoothEar = 0.32;
-  double _smoothAttention = 0.95;
-  int _lastFrameTime = 0;
-  int _frameCount = 0;
-  int _measuredFps = 30;
+  int _lastClientFrameTime = 0;
+  int _clientFrameCount = 0;
+  int _clientFps = 0;
 
   @override
   void initState() {
     super.initState();
     _elementId = 'mentra-webcam-${widget.viewId}-${DateTime.now().millisecondsSinceEpoch}';
-    _offscreenCanvas = html.CanvasElement(width: 160, height: 120);
+    _offscreenCanvas = html.CanvasElement(width: 320, height: 240);
     _canvasCtx = _offscreenCanvas!.context2D;
     _initWebcam();
   }
@@ -81,179 +81,124 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
     );
     _isRegistered = true;
 
-    // Request camera access
+    // Request real hardware camera access via browser mediaDevices
     html.window.navigator.mediaDevices?.getUserMedia({'video': true}).then((stream) {
       if (mounted && _videoElement != null) {
         _videoElement!.srcObject = stream;
         _videoElement!.play();
         _startRealTimeCvPipeline();
       }
-    }).catchError((_) {
-      // Gracefully handle denied permission or headless test
+    }).catchError((error) {
+      if (mounted) {
+        widget.onTelemetry?.call(
+          RealTimeCvTelemetry(
+            isFaceDetected: false,
+            confidence: 0.0,
+            box: const Rect.fromLTWH(0.25, 0.20, 0.50, 0.55),
+            landmarks: const [],
+            yaw: 0.0,
+            pitch: 0.0,
+            roll: 0.0,
+            attentionScore: 0.0,
+            ear: 0.0,
+            leftEar: 0.0,
+            rightEar: 0.0,
+            phoneDetected: false,
+            phoneConfidence: 0.0,
+            orientation: 'UNKNOWN',
+            focusState: 'CAMERA_ERROR',
+            fps: 0,
+            latencyMs: 0.0,
+            statusMessage: 'CAMERA PERMISSION DENIED / UNAVAILABLE',
+          ),
+        );
+      }
     });
   }
 
   void _startRealTimeCvPipeline() {
     _cvProcessingTimer?.cancel();
-    _lastFrameTime = DateTime.now().millisecondsSinceEpoch;
+    _lastClientFrameTime = DateTime.now().millisecondsSinceEpoch;
 
-    // Run real-time computer vision inference loop at ~20-30 FPS
-    _cvProcessingTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+    // Run throttled frame capture loop every 120ms (~8 FPS)
+    // Non-blocking: skips frame if prior frame inference is in progress
+    _cvProcessingTimer = Timer.periodic(const Duration(milliseconds: 120), (_) {
       _processLiveCameraFrame();
     });
   }
 
-  void _processLiveCameraFrame() {
-    if (!mounted || _videoElement == null || _canvasCtx == null || _offscreenCanvas == null) return;
+  Future<void> _processLiveCameraFrame() async {
+    if (!mounted || _isProcessingFrame) return;
+    if (_videoElement == null || _canvasCtx == null || _offscreenCanvas == null) return;
     if (_videoElement!.readyState < 2 || _videoElement!.videoWidth == 0) return;
 
+    _isProcessingFrame = true;
     final startTime = DateTime.now().millisecondsSinceEpoch;
 
     try {
-      // 1. Grab live frame from HTML5 video element into offscreen canvas
-      const cvWidth = 160;
-      const cvHeight = 120;
+      // 1. Grab live frame from HTML5 video element into offscreen canvas (320x240)
+      const cvWidth = 320;
+      const cvHeight = 240;
       _canvasCtx!.drawImageScaled(_videoElement!, 0, 0, cvWidth, cvHeight);
 
-      final imgData = _canvasCtx!.getImageData(0, 0, cvWidth, cvHeight);
-      final data = imgData.data;
-
-      // 2. Real-Time Multi-Feature Facial Skin & Chromaticity Segmentation (YCrCb + RGB)
-      int skinPixelCount = 0;
-      double sumX = 0;
-      double sumY = 0;
-      int minX = cvWidth;
-      int minY = cvHeight;
-      int maxX = 0;
-      int maxY = 0;
-
-      for (int y = 0; y < cvHeight; y += 2) {
-        for (int x = 0; x < cvWidth; x += 2) {
-          final idx = (y * cvWidth + x) * 4;
-          final r = data[idx];
-          final g = data[idx + 1];
-          final b = data[idx + 2];
-
-          // Compute YCrCb chrominance values
-          final luma = 0.299 * r + 0.587 * g + 0.114 * b;
-          final cr = (r - luma) * 0.713 + 128.0;
-          final cb = (b - luma) * 0.564 + 128.0;
-
-          // Standard robust YCrCb human skin chrominance + RGB threshold
-          final isSkin = (cr >= 128 && cr <= 180) &&
-              (cb >= 75 && cb <= 135) &&
-              (r > 50) &&
-              (r > g) &&
-              (g > b * 0.65) &&
-              (r - g > 6);
-
-          if (isSkin) {
-            skinPixelCount++;
-            sumX += x;
-            sumY += y;
-            if (x < minX) minX = x;
-            if (y < minY) minY = y;
-            if (x > maxX) maxX = x;
-            if (y > maxY) maxY = y;
-          }
-        }
-      }
+      // Convert canvas to JPEG data URL
+      final dataUrl = _offscreenCanvas!.toDataUrl('image/jpeg', 0.65);
 
       final now = DateTime.now().millisecondsSinceEpoch;
-      _frameCount++;
-      if (now - _lastFrameTime >= 1000) {
-        _measuredFps = _frameCount;
-        _frameCount = 0;
-        _lastFrameTime = now;
+      _clientFrameCount++;
+      if (now - _lastClientFrameTime >= 1000) {
+        _clientFps = _clientFrameCount;
+        _clientFrameCount = 0;
+        _lastClientFrameTime = now;
       }
 
-      final latencyMs = (now - startTime).toDouble();
+      // 2. Post frame to local Computer Vision Engine
+      final requestPayload = jsonEncode({
+        'image_base64': dataUrl,
+        'timestamp': now / 1000.0,
+      });
 
-      // Minimum threshold of skin pixels to confirm genuine human face in frame
-      const minFacePixels = 180;
-      final isFaceDetected = skinPixelCount >= minFacePixels && (maxX - minX) >= 20 && (maxY - minY) >= 20;
+      final response = await html.HttpRequest.request(
+        _cvEndpoint,
+        method: 'POST',
+        sendData: requestPayload,
+        requestHeaders: {'Content-Type': 'application/json'},
+      );
 
-      if (isFaceDetected && skinPixelCount > 0) {
-        final cx = sumX / skinPixelCount;
-        final cy = sumY / skinPixelCount;
-        final midFaceX = (minX + maxX) / 2.0;
-        final midFaceY = (minY + maxY) / 2.0;
-        final faceW = (maxX - minX).toDouble();
-        final faceH = (maxY - minY).toDouble();
+      if (response.status == 200 && mounted) {
+        final data = jsonDecode(response.responseText ?? '{}') as Map<String, dynamic>;
 
-        // 3. Real Head Rotation / Yaw Calculation via Left/Right Face Asymmetry
-        int leftSkinCount = 0;
-        int rightSkinCount = 0;
-        int upperSkinCount = 0;
-        int lowerSkinCount = 0;
+        final isFaceDetected = data['face_detected'] as bool? ?? false;
+        final faceConfidence = (data['face_confidence'] as num?)?.toDouble() ?? 0.0;
+        final yaw = (data['yaw'] as num?)?.toDouble() ?? 0.0;
+        final pitch = (data['pitch'] as num?)?.toDouble() ?? 0.0;
+        final roll = (data['roll'] as num?)?.toDouble() ?? 0.0;
+        final orientation = data['orientation'] as String? ?? 'UNKNOWN';
+        final ear = (data['ear'] as num?)?.toDouble() ?? 0.0;
+        final leftEar = (data['left_ear'] as num?)?.toDouble() ?? 0.0;
+        final rightEar = (data['right_ear'] as num?)?.toDouble() ?? 0.0;
+        final isDrowsy = data['is_drowsy'] as bool? ?? false;
+        final phoneDetected = data['phone_detected'] as bool? ?? false;
+        final phoneConfidence = (data['phone_confidence'] as num?)?.toDouble() ?? 0.0;
+        final focusState = data['focus_state'] as String? ?? 'UNKNOWN';
+        final engineFps = (data['fps'] as num?)?.toInt() ?? _clientFps;
+        final latencyMs = (DateTime.now().millisecondsSinceEpoch - startTime).toDouble();
 
-        for (int y = minY; y <= maxY && y < cvHeight; y += 2) {
-          for (int x = minX; x <= maxX && x < cvWidth; x += 2) {
-            final idx = (y * cvWidth + x) * 4;
-            final r = data[idx];
-            final g = data[idx + 1];
-            final b = data[idx + 2];
-            final luma = 0.299 * r + 0.587 * g + 0.114 * b;
-            final cr = (r - luma) * 0.713 + 128.0;
-            final cb = (b - luma) * 0.564 + 128.0;
+        // Parse Real Face Bounding Box
+        double targetMinX = 0.25;
+        double targetMinY = 0.20;
+        double targetMaxX = 0.75;
+        double targetMaxY = 0.76;
 
-            if ((cr >= 128 && cr <= 180) && (cb >= 75 && cb <= 135) && (r > g)) {
-              if (x < midFaceX) leftSkinCount++;
-              if (x >= midFaceX) rightSkinCount++;
-              if (y < midFaceY) upperSkinCount++;
-              if (y >= midFaceY) lowerSkinCount++;
-            }
-          }
+        if (isFaceDetected && data['bounding_box'] != null) {
+          final bb = data['bounding_box'] as Map<String, dynamic>;
+          targetMinX = (bb['x'] as num).toDouble().clamp(0.02, 0.90);
+          targetMinY = (bb['y'] as num).toDouble().clamp(0.02, 0.90);
+          final w = (bb['width'] as num).toDouble();
+          final h = (bb['height'] as num).toDouble();
+          targetMaxX = (targetMinX + w).clamp(targetMinX + 0.05, 0.98);
+          targetMaxY = (targetMinY + h).clamp(targetMinY + 0.05, 0.98);
         }
-
-        // Horizontal asymmetry and centroid skew determines true Head Yaw (looking left/right)
-        final skewX = faceW > 0 ? ((cx - midFaceX) / (faceW / 2.0)).clamp(-1.0, 1.0) : 0.0;
-        final totalLR = leftSkinCount + rightSkinCount;
-        final asymmetryLR = totalLR > 0 ? ((rightSkinCount - leftSkinCount) / totalLR).clamp(-1.0, 1.0) : 0.0;
-        final rawYaw = (skewX * 28.0 + asymmetryLR * 32.0).clamp(-40.0, 40.0);
-
-        // Vertical asymmetry and centroid skew determines true Head Pitch (looking down at phone/desk)
-        final skewY = faceH > 0 ? ((cy - midFaceY) / (faceH / 2.0)).clamp(-1.0, 1.0) : 0.0;
-        final totalUL = upperSkinCount + lowerSkinCount;
-        final asymmetryUL = totalUL > 0 ? ((upperSkinCount - lowerSkinCount) / totalUL).clamp(-1.0, 1.0) : 0.0;
-        final rawPitch = (skewY * 26.0 + asymmetryUL * 28.0).clamp(-35.0, 35.0);
-
-        // Exponential smoothing on pose
-        _smoothYaw = _smoothYaw * 0.70 + rawYaw * 0.30;
-        _smoothPitch = _smoothPitch * 0.70 + rawPitch * 0.30;
-
-        // 4. Real Eye Contrast & EAR (Eye Aspect Ratio / Closure) Analysis
-        final eyeRegionTop = (minY + faceH * 0.18).toInt().clamp(0, cvHeight - 1);
-        final eyeRegionBottom = (minY + faceH * 0.42).toInt().clamp(0, cvHeight - 1);
-        final eyeRegionLeft = (minX + faceW * 0.15).toInt().clamp(0, cvWidth - 1);
-        final eyeRegionRight = (minX + faceW * 0.85).toInt().clamp(0, cvWidth - 1);
-
-        double minLuma = 255.0;
-        double sumLuma = 0.0;
-        int eyeSamples = 0;
-
-        for (int ey = eyeRegionTop; ey <= eyeRegionBottom; ey += 2) {
-          for (int ex = eyeRegionLeft; ex <= eyeRegionRight; ex += 2) {
-            final idx = (ey * cvWidth + ex) * 4;
-            final luma = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-            if (luma < minLuma) minLuma = luma;
-            sumLuma += luma;
-            eyeSamples++;
-          }
-        }
-
-        final avgLuma = eyeSamples > 0 ? (sumLuma / eyeSamples) : 100.0;
-        // Pupil-to-skin contrast ratio
-        final contrastRatio = avgLuma > 0 ? ((avgLuma - minLuma) / avgLuma).clamp(0.0, 1.0) : 0.25;
-        // When eyes close, contrast valley vanishes (contrastRatio < 0.18)
-        final targetEar = (contrastRatio * 0.75).clamp(0.10, 0.40);
-        _smoothEar = _smoothEar * 0.65 + targetEar * 0.35;
-
-        // Normalized bounding box coordinates (0.0 to 1.0)
-        double targetMinX = (minX / cvWidth).clamp(0.04, 0.88);
-        double targetMinY = (minY / cvHeight).clamp(0.04, 0.88);
-        double targetMaxX = (maxX / cvWidth).clamp(targetMinX + 0.12, 0.96);
-        double targetMaxY = (maxY / cvHeight).clamp(targetMinY + 0.12, 0.96);
 
         // Adjust for mirrored video display alignment
         if (widget.isMirrored) {
@@ -263,78 +208,72 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
           targetMaxX = tempMax;
         }
 
-        // Exponential Moving Average (EMA) temporal smoothing for box
-        const alpha = 0.35;
+        // EMA temporal smoothing for box rendering
+        const alpha = 0.40;
         _smoothMinX = _smoothMinX * (1 - alpha) + targetMinX * alpha;
         _smoothMinY = _smoothMinY * (1 - alpha) + targetMinY * alpha;
         _smoothMaxX = _smoothMaxX * (1 - alpha) + targetMaxX * alpha;
         _smoothMaxY = _smoothMaxY * (1 - alpha) + targetMaxY * alpha;
 
-        // 5. Real Focus / Distraction Evaluation
-        final isHeadTurned = _smoothYaw.abs() > 14.0;
-        final isLookingDown = _smoothPitch > 13.0;
-        final isDrowsy = _smoothEar < 0.16;
-        final isDistracted = isHeadTurned || isLookingDown || isDrowsy;
-
-        final targetAttention = isDistracted ? 0.35 : 0.96;
-        _smoothAttention = _smoothAttention * 0.80 + targetAttention * 0.20;
-
-        final boxWidth = _smoothMaxX - _smoothMinX;
-        final boxHeight = _smoothMaxY - _smoothMinY;
-        final boxCenter = Offset(_smoothMinX + boxWidth / 2, _smoothMinY + boxHeight / 2);
-
-        String statusMsg;
-        if (isDrowsy) {
-          statusMsg = 'DROWSINESS (EYES CLOSED)';
-        } else if (isLookingDown) {
-          statusMsg = 'LOOKING DOWN (PHONE/DESK)';
-        } else if (isHeadTurned) {
-          statusMsg = 'LOOKING AWAY (HEAD TURNED)';
-        } else {
-          statusMsg = 'FOCUSED ON MATERIAL';
+        // Parse Real Landmark Anchor Points
+        final rawLms = data['landmarks'] as List<dynamic>? ?? [];
+        final List<Offset> landmarks = [];
+        for (final raw in rawLms) {
+          if (raw is List && raw.length >= 2) {
+            double lx = (raw[0] as num).toDouble();
+            double ly = (raw[1] as num).toDouble();
+            if (widget.isMirrored) {
+              lx = 1.0 - lx;
+            }
+            landmarks.add(Offset(lx, ly));
+          }
         }
 
-        final telemetry = RealTimeCvTelemetry(
-          isFaceDetected: true,
-          confidence: (0.91 + (skinPixelCount / 1000) * 0.08).clamp(0.85, 0.99),
-          box: Rect.fromLTRB(_smoothMinX, _smoothMinY, _smoothMaxX, _smoothMaxY),
-          landmarks: [
-            Offset(boxCenter.dx - boxWidth * 0.22, boxCenter.dy - boxHeight * 0.14), // Left Eye
-            Offset(boxCenter.dx + boxWidth * 0.22, boxCenter.dy - boxHeight * 0.14), // Right Eye
-            Offset(boxCenter.dx, boxCenter.dy + boxHeight * 0.04),                   // Nose Tip
-            Offset(boxCenter.dx, boxCenter.dy + boxHeight * 0.22),                   // Mouth
-          ],
-          yaw: _smoothYaw,
-          pitch: _smoothPitch,
-          attentionScore: _smoothAttention,
-          ear: _smoothEar,
-          fps: _measuredFps > 0 ? _measuredFps : 30,
-          latencyMs: latencyMs < 1.0 ? 6.0 : latencyMs,
-          statusMessage: statusMsg,
-        );
+        // Human readable status message
+        String statusMsg;
+        if (phoneDetected) {
+          statusMsg = 'PHONE DETECTED (${(phoneConfidence * 100).toInt()}%)';
+        } else if (isDrowsy) {
+          statusMsg = 'DROWSINESS (EYES CLOSED - EAR ${ear.toStringAsFixed(2)})';
+        } else if (orientation == 'LOOKING_DOWN') {
+          statusMsg = 'LOOKING DOWN (PITCH +${pitch.toInt()}°)';
+        } else if (orientation == 'LOOKING_AWAY') {
+          statusMsg = 'LOOKING AWAY (YAW ${yaw > 0 ? '+' : ''}${yaw.toInt()}°)';
+        } else if (isFaceDetected) {
+          statusMsg = 'FOCUSED ON MATERIAL';
+        } else {
+          statusMsg = 'AWAY FROM STUDY VIEW';
+        }
 
-        widget.onTelemetry?.call(telemetry);
-      } else {
-        // No human face detected in current frame
-        _smoothAttention = _smoothAttention * 0.75;
+        final attentionScore = focusState == 'FOCUSED' ? 0.95 : (isFaceDetected ? 0.35 : 0.0);
+
         final telemetry = RealTimeCvTelemetry(
-          isFaceDetected: false,
-          confidence: 0.0,
-          box: const Rect.fromLTWH(0.25, 0.20, 0.50, 0.55),
-          landmarks: const [],
-          yaw: 0.0,
-          pitch: 0.0,
-          attentionScore: _smoothAttention.clamp(0.0, 1.0),
-          ear: 0.0,
-          fps: _measuredFps > 0 ? _measuredFps : 30,
-          latencyMs: latencyMs < 1.0 ? 6.0 : latencyMs,
-          statusMessage: 'AWAY FROM STUDY VIEW',
+          isFaceDetected: isFaceDetected,
+          confidence: faceConfidence,
+          box: Rect.fromLTRB(_smoothMinX, _smoothMinY, _smoothMaxX, _smoothMaxY),
+          landmarks: landmarks,
+          yaw: yaw,
+          pitch: pitch,
+          roll: roll,
+          attentionScore: attentionScore,
+          ear: ear,
+          leftEar: leftEar,
+          rightEar: rightEar,
+          phoneDetected: phoneDetected,
+          phoneConfidence: phoneConfidence,
+          orientation: orientation,
+          focusState: focusState,
+          fps: engineFps > 0 ? engineFps : _clientFps,
+          latencyMs: latencyMs,
+          statusMessage: statusMsg,
         );
 
         widget.onTelemetry?.call(telemetry);
       }
     } catch (_) {
-      // Non-fatal frame processing error
+      // Non-fatal frame transmission failure
+    } finally {
+      _isProcessingFrame = false;
     }
   }
 

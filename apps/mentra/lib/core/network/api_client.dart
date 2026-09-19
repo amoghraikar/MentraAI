@@ -114,6 +114,29 @@ class ApiClient {
         ));
   }
 
+  Stream<String> postStream(
+    String path, {
+    Map<String, dynamic>? body,
+    String? token,
+  }) async* {
+    final effectiveToken = await _resolveToken(token);
+    final uri = _buildUri(path);
+    final request = http.Request('POST', uri);
+    request.headers.addAll(_buildHeaders(token: effectiveToken));
+    if (body != null) {
+      request.body = jsonEncode(body);
+    }
+    final streamedResponse = await _httpClient.send(request);
+    if (streamedResponse.statusCode >= 400) {
+      final errBody = await streamedResponse.stream.bytesToString();
+      throw ApiException(
+        statusCode: streamedResponse.statusCode,
+        message: 'Streaming failed ($errBody)',
+      );
+    }
+    yield* streamedResponse.stream.transform(utf8.decoder);
+  }
+
   Future<dynamic> _sendRequest(Future<http.Response> Function() requestFn) async {
     try {
       final response = await requestFn().timeout(timeout);

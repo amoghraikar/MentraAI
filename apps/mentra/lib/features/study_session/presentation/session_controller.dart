@@ -45,17 +45,32 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   int _finalElapsedSeconds = 0;
 
   int _distractionsCount = 0;
-  int _focusScore = 88;
+  int _focusScore = 100;
   FocusEvent? _latestAlertEvent;
   SessionReflection _selectedReflection = SessionReflection.good;
   StudySessionRecord? _lastSavedRecord;
   bool _isSaving = false;
+
+  // Real observed CV durations
+  double _totalObservedSeconds = 0.0;
+  double _focusedSeconds = 0.0;
+  double _awaySeconds = 0.0;
+  double _lookingAwaySeconds = 0.0;
+  double _eyesClosedSeconds = 0.0;
+  double _phoneDetectedSeconds = 0.0;
+  DateTime? _lastObservationTime;
 
   SessionState get state => _state;
   SessionConfig? get currentConfig => _currentConfig;
   int get targetSeconds => _targetSeconds;
   int get distractionsCount => _distractionsCount;
   int get focusScore => _focusScore;
+  double get totalObservedSeconds => _totalObservedSeconds;
+  double get focusedSeconds => _focusedSeconds;
+  double get awaySeconds => _awaySeconds;
+  double get lookingAwaySeconds => _lookingAwaySeconds;
+  double get eyesClosedSeconds => _eyesClosedSeconds;
+  double get phoneDetectedSeconds => _phoneDetectedSeconds;
   FocusEvent? get latestAlertEvent => _latestAlertEvent;
   SessionReflection get selectedReflection => _selectedReflection;
   StudySessionRecord? get lastSavedRecord => _lastSavedRecord;
@@ -84,7 +99,6 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
         event.type == FocusEventType.faceAbsent) {
       _distractionsCount++;
       _latestAlertEvent = event;
-      _recalculateFocusScore();
       notifyListeners();
     } else if (event.type == FocusEventType.focusPresent) {
       if (_latestAlertEvent?.type == FocusEventType.faceAbsent) {
@@ -101,14 +115,46 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Ingest real-time camera computer vision observation directly into focus engine
   void ingestObservation(FocusObservation observation) {
-    if (_state == SessionState.active && focusMonitoringService != null) {
+    if (_state != SessionState.active) return;
+
+    final now = observation.timestamp;
+    if (_lastObservationTime != null) {
+      final delta = (now.difference(_lastObservationTime!).inMilliseconds / 1000.0).clamp(0.0, 3.0);
+      _totalObservedSeconds += delta;
+
+      if (!observation.isFaceDetected) {
+        _awaySeconds += delta;
+      } else if (observation.phoneDetected) {
+        _phoneDetectedSeconds += delta;
+      } else if (observation.eyeState == EyeState.closed || (observation.ear != null && observation.ear! < 0.20)) {
+        _eyesClosedSeconds += delta;
+      } else if (observation.isDistractionDetected || observation.distractionType != null) {
+        _lookingAwaySeconds += delta;
+      } else {
+        _focusedSeconds += delta;
+      }
+
+      _recalculateFocusScore();
+    }
+    _lastObservationTime = now;
+
+    if (focusMonitoringService != null) {
       focusMonitoringService!.ingestObservation(observation);
     }
+    notifyListeners();
   }
 
   void _recalculateFocusScore() {
-    final penalty = _distractionsCount * 3;
-    _focusScore = (92 - penalty).clamp(55, 98);
+    if (_totalObservedSeconds > 0) {
+      final ratio = _focusedSeconds / _totalObservedSeconds;
+      _focusScore = (ratio * 100).round().clamp(0, 100);
+    } else if (_distractionsCount > 0) {
+      // In synthetic tests or without camera observations, deduce from recorded distractions
+      final penalty = _distractionsCount * 3;
+      _focusScore = (92 - penalty).clamp(55, 98);
+    } else {
+      _focusScore = 100;
+    }
   }
 
   /// Accurately computes elapsed study duration in seconds from real wall-clock timestamps.
@@ -159,7 +205,14 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     _accumulatedActiveSeconds = 0;
     _finalElapsedSeconds = 0;
     _distractionsCount = 0;
-    _focusScore = 88;
+    _focusScore = 100;
+    _totalObservedSeconds = 0.0;
+    _focusedSeconds = 0.0;
+    _awaySeconds = 0.0;
+    _lookingAwaySeconds = 0.0;
+    _eyesClosedSeconds = 0.0;
+    _phoneDetectedSeconds = 0.0;
+    _lastObservationTime = null;
     _latestAlertEvent = null;
     _sessionStartTime = null;
     _currentSegmentStartTime = null;

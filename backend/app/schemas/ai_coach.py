@@ -14,18 +14,23 @@ class AiCoachChatRequest(BaseModel):
     history: List[ChatHistoryItem] = Field(default_factory=list, description="Prior conversation history turns")
     subject_id: Optional[str] = Field(None, description="Optional active subject identifier")
     topic_id: Optional[str] = Field(None, description="Optional active topic identifier")
+    active_session_id: Optional[str] = Field(None, description="Optional currently active study session ID")
     include_study_context: bool = Field(True, description="Whether to enrich prompt with user study metrics")
     provider: Optional[str] = Field(None, description="Custom provider: openai, gemini, groq, openrouter, ollama, custom")
     api_key: Optional[str] = Field(None, description="Custom API key")
     model: Optional[str] = Field(None, description="Custom model name (e.g. gpt-4o, gemini-1.5-pro, llama-3.3-70b)")
     custom_system_prompt: Optional[str] = Field(None, description="Custom system instructions for the GPT")
     custom_endpoint_url: Optional[str] = Field(None, description="Custom OpenAI-compatible base URL")
+    attached_material_text: Optional[str] = Field(None, description="Optional study material pasted/attached with this prompt")
 
 
 class AiCoachChatResponse(BaseModel):
     id: str
     sender: str = "coach"
     message: str
+    intent: Optional[str] = None
+    mode: Optional[str] = None
+    action: Optional[dict] = None
     action_suggestion: Optional[str] = None
     suggested_next_steps: List[str] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -45,6 +50,44 @@ class AiCoachConfigResponse(BaseModel):
     supported_providers: List[str]
     model: str
     custom_system_prompt: Optional[str] = None
+
+
+class LocalLLMStatusResponse(BaseModel):
+    state: str = Field(..., description="UNINITIALIZED, LOADING, READY, GENERATING, STOPPING, ERROR, DISPOSED")
+    model: str
+    status_message: str
+    is_ready: bool
+    last_error: Optional[str] = None
+
+
+class TestKeyRequest(BaseModel):
+    provider: str = Field("openai", description="openai, gemini, groq, openrouter, ollama, custom")
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    custom_endpoint_url: Optional[str] = None
+
+
+class TestKeyResponse(BaseModel):
+    success: bool
+    latency_ms: int
+    message: str
+    provider: str
+    model: str
+
+
+class StudyMaterialUploadRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    content: str = Field(..., min_length=1)
+    filename: Optional[str] = None
+
+
+class StudyMaterialUploadResponse(BaseModel):
+    doc_id: str
+    title: str
+    filename: str
+    char_count: int
+    chunks_count: int
+    summary_preview: str
 
 
 

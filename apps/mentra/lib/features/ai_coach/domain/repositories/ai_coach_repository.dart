@@ -13,7 +13,27 @@ abstract class AiCoachRepository {
     String? model,
     String? customSystemPrompt,
     String? customEndpointUrl,
+    String? attachedMaterialText,
   });
+  Stream<String> streamCoachQuestion(
+    String question, {
+    String? subjectId,
+    String? topicId,
+    List<ChatMessage>? history,
+    String? customSystemPrompt,
+  });
+  Future<Map<String, dynamic>> testKey({
+    required String provider,
+    String? apiKey,
+    String? model,
+    String? customEndpointUrl,
+  });
+  Future<Map<String, dynamic>> uploadStudyMaterial({
+    required String title,
+    required String content,
+    String? filename,
+  });
+  Future<List<Map<String, dynamic>>> listStudyMaterials();
   Future<Map<String, dynamic>> explainConcept(String conceptName, {String? subjectId, String? topicId, String? difficultyLevel});
   Future<Map<String, dynamic>> evaluateIntervention({
     required String subjectTitle,
@@ -32,4 +52,8 @@ abstract class AiCoachRepository {
     required int distractionsCount,
     required String reflection,
   });
+  Future<Map<String, dynamic>> getModelStatus();
+  Future<void> cancelGeneration();
+  Future<void> clearChatHistory();
 }
+

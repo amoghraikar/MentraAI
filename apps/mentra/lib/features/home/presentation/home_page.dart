@@ -93,41 +93,56 @@ class _HomePageState extends State<HomePage> {
         const SizedBox(height: AppSpacing.xl),
 
         // Today's Overview Metrics
-        MentraSection(
-          title: "Today's Progress",
-          subtitle: 'Daily learning time, average focus score, and active sessions',
-          child: Row(
-            children: [
-              Expanded(
-                child: MentraStatCard(
-                  title: 'Study Time',
-                  value: _stats['totalStudyHours'] ?? '2h 15m',
-                  subtitle: '+45m vs yesterday',
-                  icon: Icons.timer_outlined,
-                  trendLabel: 'On Track',
-                ),
+        Builder(
+          builder: (context) {
+            final totalMins = _stats['totalMinutes'] as int? ?? 0;
+            final hours = totalMins ~/ 60;
+            final mins = totalMins % 60;
+            final formattedStudyTime = totalMins > 0 ? '${hours}h ${mins}m' : '0m';
+
+            final avgFocus = _stats['averageFocusScore'] as int? ?? 0;
+            final formattedFocus = avgFocus > 0 ? '$avgFocus%' : '0%';
+
+            final sessionCount = _stats['completedSessionsCount'] as int? ?? 0;
+
+            return MentraSection(
+              title: "Today's Progress",
+              subtitle: 'Daily learning time, average focus score, and active sessions',
+              child: Row(
+                children: [
+                  Expanded(
+                    child: MentraStatCard(
+                      title: 'Study Time',
+                      value: formattedStudyTime,
+                      subtitle: totalMins > 0 ? 'Total logged focus time' : 'No study time logged yet',
+                      icon: Icons.timer_outlined,
+                      trendLabel: totalMins > 0 ? 'Active' : 'Start Session',
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: MentraStatCard(
+                      title: 'Focus Score',
+                      value: formattedFocus,
+                      subtitle: avgFocus > 0 ? 'Attention baseline' : 'Calculated during sessions',
+                      icon: Icons.insights_outlined,
+                      trendLabel: avgFocus >= 80 ? 'High' : (avgFocus > 0 ? 'Moderate' : 'No Data'),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: MentraStatCard(
+                      title: 'Sessions',
+                      value: '$sessionCount',
+                      subtitle: 'Completed study blocks',
+                      icon: Icons.check_circle_outline_rounded,
+                      trendLabel: sessionCount > 0 ? 'Logged' : 'Ready',
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: MentraStatCard(
-                  title: 'Focus Score',
-                  value: _stats['averageFocus'] ?? '84%',
-                  subtitle: 'High attention baseline',
-                  icon: Icons.insights_outlined,
-                  trendLabel: 'High',
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: MentraStatCard(
-                  title: 'Sessions',
-                  value: '${_stats['totalSessions'] ?? 3}',
-                  subtitle: 'Completed study blocks',
-                  icon: Icons.check_circle_outline_rounded,
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
 
         const SizedBox(height: AppSpacing.xl),
@@ -214,12 +229,17 @@ class _HomePageState extends State<HomePage> {
                         children: [
                           const Icon(Icons.psychology_outlined, color: AppColors.accent, size: 20),
                           const SizedBox(width: AppSpacing.xs),
-                          Text('Peak Attention Window', style: AppTypography.labelMedium),
+                          Text(
+                            _recentSessions.isEmpty ? 'Cognitive Baseline' : 'Focus Endurance',
+                            style: AppTypography.labelMedium,
+                          ),
                         ],
                       ),
                       const SizedBox(height: AppSpacing.sm),
                       Text(
-                        'Your focus is usually strongest during the first 45 minutes of studying. Taking a 10-minute break after this window prevents the 35% cognitive drop observed in longer sessions.',
+                        _recentSessions.isEmpty
+                            ? 'No study sessions recorded yet. Complete your first study block with on-device focus tracking to establish your real attention baseline.'
+                            : 'Your average attention score across ${_recentSessions.length} logged session(s) is ${_stats['averageFocusScore'] ?? 0}%. Continue pacing 45-minute blocks for maximum retention.',
                         style: AppTypography.bodySmall.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                           height: 1.4,

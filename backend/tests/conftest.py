@@ -36,8 +36,14 @@ def setup_test_db():
 
     fastapi_app.dependency_overrides[get_db] = override_get_db
 
+    from app.api.v1.endpoints.ai_coach import ai_coach_service
+    from app.services.ai.providers import HeuristicAiProvider
+    original_provider = ai_coach_service.provider
+    ai_coach_service.set_provider(HeuristicAiProvider())
+
     yield
 
+    ai_coach_service.set_provider(original_provider)
     fastapi_app.dependency_overrides.clear()
     db_session.SessionLocal = original_session_local
     db_session.engine = original_engine

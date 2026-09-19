@@ -43,6 +43,13 @@ class FocusObservation {
     this.isDistractionDetected = false,
     this.distractionConfidence = 0.0,
     this.distractionType,
+    this.phoneDetected = false,
+    this.phoneConfidence = 0.0,
+    this.ear,
+    this.yaw,
+    this.pitch,
+    this.roll,
+    this.focusState,
   });
 
   final DateTime timestamp;
@@ -54,6 +61,13 @@ class FocusObservation {
   final bool isDistractionDetected;
   final double distractionConfidence;
   final String? distractionType;
+  final bool phoneDetected;
+  final double phoneConfidence;
+  final double? ear;
+  final double? yaw;
+  final double? pitch;
+  final double? roll;
+  final String? focusState;
 
   /// Synthetic focused observation helper for tests
   factory FocusObservation.focused([DateTime? timestamp]) => FocusObservation(
@@ -63,6 +77,11 @@ class FocusObservation {
         faceConfidence: 0.95,
         eyeState: EyeState.open,
         eyeOpenProbability: 0.95,
+        ear: 0.28,
+        yaw: 0.0,
+        pitch: 0.0,
+        roll: 0.0,
+        focusState: 'FOCUSED',
       );
 
   /// Synthetic face-absent observation helper for tests
@@ -72,6 +91,7 @@ class FocusObservation {
         faceConfidence: 0.0,
         eyeState: EyeState.uncertain,
         eyeOpenProbability: 0.0,
+        focusState: 'FACE_NOT_DETECTED',
       );
 
   /// Synthetic closed-eyes observation helper for tests
@@ -82,6 +102,8 @@ class FocusObservation {
         faceConfidence: 0.92,
         eyeState: EyeState.closed,
         eyeOpenProbability: 0.05,
+        ear: 0.12,
+        focusState: 'POSSIBLE_DROWSINESS',
       );
 
   /// Synthetic distraction observation helper for tests
@@ -94,6 +116,9 @@ class FocusObservation {
         isDistractionDetected: true,
         distractionConfidence: 0.85,
         distractionType: type ?? 'phone',
+        phoneDetected: type == 'phone',
+        phoneConfidence: type == 'phone' ? 0.85 : 0.0,
+        focusState: type == 'phone' ? 'PHONE_DETECTED' : 'LOOKING_AWAY',
       );
 }
 
@@ -160,8 +185,15 @@ class RealTimeCvTelemetry {
     required this.landmarks,
     required this.yaw,
     required this.pitch,
+    required this.roll,
     required this.attentionScore,
     required this.ear,
+    required this.leftEar,
+    required this.rightEar,
+    required this.phoneDetected,
+    required this.phoneConfidence,
+    required this.orientation,
+    required this.focusState,
     required this.fps,
     required this.latencyMs,
     required this.statusMessage,
@@ -171,17 +203,45 @@ class RealTimeCvTelemetry {
   final double confidence;
   final Rect box; // 0.0 to 1.0 normalized bounds in video coordinates
   final List<Offset> landmarks; // normalized offsets: [leftEye, rightEye, nose, mouth]
-  final double yaw; // head yaw in degrees (-30 to +30)
-  final double pitch; // head pitch in degrees (-20 to +20)
+  final double yaw; // head yaw in degrees (negative = left, positive = right)
+  final double pitch; // head pitch in degrees (positive = looking down)
+  final double roll; // head roll in degrees
   final double attentionScore; // 0.0 to 1.0
   final double ear; // Eye Aspect Ratio (0.0 to 0.5)
+  final double leftEar;
+  final double rightEar;
+  final bool phoneDetected;
+  final double phoneConfidence;
+  final String orientation;
+  final String focusState;
   final int fps; // Measured processing frames per second
   final double latencyMs; // Processing inference latency in ms
   final String statusMessage;
 
+  factory RealTimeCvTelemetry.uninitialized() => const RealTimeCvTelemetry(
+        isFaceDetected: false,
+        confidence: 0.0,
+        box: Rect.fromLTWH(0.25, 0.20, 0.50, 0.55),
+        landmarks: [],
+        yaw: 0.0,
+        pitch: 0.0,
+        roll: 0.0,
+        attentionScore: 0.0,
+        ear: 0.0,
+        leftEar: 0.0,
+        rightEar: 0.0,
+        phoneDetected: false,
+        phoneConfidence: 0.0,
+        orientation: 'UNKNOWN',
+        focusState: 'UNINITIALIZED',
+        fps: 0,
+        latencyMs: 0.0,
+        statusMessage: 'INITIALIZING CV ENGINE...',
+      );
+
   factory RealTimeCvTelemetry.defaultFace() => const RealTimeCvTelemetry(
         isFaceDetected: true,
-        confidence: 0.98,
+        confidence: 0.95,
         box: Rect.fromLTWH(0.25, 0.18, 0.50, 0.58),
         landmarks: [
           Offset(0.38, 0.35),
@@ -191,10 +251,18 @@ class RealTimeCvTelemetry {
         ],
         yaw: 0.0,
         pitch: 0.0,
-        attentionScore: 0.96,
-        ear: 0.32,
+        roll: 0.0,
+        attentionScore: 0.95,
+        ear: 0.28,
+        leftEar: 0.28,
+        rightEar: 0.28,
+        phoneDetected: false,
+        phoneConfidence: 0.0,
+        orientation: 'NORMAL_FORWARD',
+        focusState: 'FOCUSED',
         fps: 30,
         latencyMs: 12.0,
         statusMessage: 'FOCUSED ON MATERIAL',
       );
 }
+

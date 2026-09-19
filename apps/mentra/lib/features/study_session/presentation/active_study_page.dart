@@ -423,35 +423,77 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: _getMonitoringStatusColor(monitoringStatus, isPaused),
-                  shape: BoxShape.circle,
+          Builder(
+            builder: (context) {
+              String statusText;
+              Color statusColor;
+
+              final alert = sessionController.latestAlertEvent;
+              if (isPaused) {
+                statusText = 'Paused';
+                statusColor = Colors.orange;
+              } else if (monitoringStatus == MonitoringStatus.permissionDenied) {
+                statusText = 'Camera Off';
+                statusColor = Colors.grey;
+              } else if (monitoringStatus == MonitoringStatus.unavailable ||
+                  monitoringStatus == MonitoringStatus.error) {
+                statusText = 'CV Offline';
+                statusColor = Colors.grey;
+              } else if (alert?.type == FocusEventType.faceAbsent) {
+                statusText = 'Away';
+                statusColor = Colors.orangeAccent;
+              } else if (alert != null) {
+                statusText = 'Distracted';
+                statusColor = Colors.amberAccent;
+              } else {
+                statusText = 'Focused';
+                statusColor = AppColors.success;
+              }
+
+              return FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      statusText,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text('•', style: AppTypography.labelSmall.copyWith(color: theme.dividerColor)),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      'Score: ${sessionController.focusScore}%',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text('•', style: AppTypography.labelSmall.copyWith(color: theme.dividerColor)),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      _getMonitoringLabel(monitoringStatus, isPaused),
+                      style: AppTypography.labelSmall.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                isPaused ? 'Paused' : 'Focused',
-                style: AppTypography.labelSmall.copyWith(
-                  color: isPaused ? Colors.orange : AppColors.success,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Text('•', style: AppTypography.labelSmall.copyWith(color: theme.dividerColor)),
-              const SizedBox(width: AppSpacing.sm),
-              Text(
-                _getMonitoringLabel(monitoringStatus, isPaused),
-                style: AppTypography.labelSmall.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+              );
+            },
           ),
         ],
       ),
