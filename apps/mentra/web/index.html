@@ -35,12 +35,30 @@
 </head>
 <body>
   <!-- Flutter Initialization -->
+  <!-- Unregister legacy service workers, clear browser cache & purge stale tokens -->
   <script>
     try {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for (var i = 0; i < registrations.length; i++) {
+            registrations[i].unregister();
+          }
+        });
+      }
+      if ('caches' in window) {
+        caches.keys().then(function(keys) {
+          for (var i = 0; i < keys.length; i++) {
+            caches.delete(keys[i]);
+          }
+        });
+      }
       if (window.localStorage) {
-        var token = window.localStorage.getItem('mentra_auth_token');
-        if (token === 'offline-demo-jwt-token' || token === 'expired_test_token') {
-          window.localStorage.removeItem('mentra_auth_token');
+        window.localStorage.removeItem('mentra_auth_token');
+        for (var j = window.localStorage.length - 1; j >= 0; j--) {
+          var k = window.localStorage.key(j);
+          if (k && (k.indexOf('mentra_') !== -1 || k.indexOf('FlutterSecureStorage') !== -1)) {
+            window.localStorage.removeItem(k);
+          }
         }
       }
     } catch (e) {}

@@ -273,7 +273,8 @@ class MarkdownMessageView extends StatelessWidget {
         ));
       }
 
-      final matchedStr = match.group(0)!;
+      final matchedStr = match.group(0);
+      if (matchedStr == null || matchedStr.isEmpty) continue;
       if (matchedStr.startsWith('`') && matchedStr.endsWith('`')) {
         // Inline code
         final code = matchedStr.substring(1, matchedStr.length - 1);

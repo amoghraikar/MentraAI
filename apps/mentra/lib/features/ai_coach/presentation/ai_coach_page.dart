@@ -260,7 +260,11 @@ class _AiCoachPageState extends State<AiCoachPage> {
       _errorMessage = null;
     });
     _queryController.clear();
-    _inputFocusNode.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_isGenerating && !_isLoading) {
+        _inputFocusNode.requestFocus();
+      }
+    });
   }
 
   Future<void> _clearChatHistory() async {
@@ -737,7 +741,11 @@ class _AiCoachPageState extends State<AiCoachPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               GestureDetector(
-                onTap: () => _inputFocusNode.requestFocus(),
+                onTap: () {
+                  if (!_isGenerating && !_isLoading) {
+                    _inputFocusNode.requestFocus();
+                  }
+                },
                 child: Container(
                   decoration: BoxDecoration(
                     color: isDark ? const Color(0xFF1E1E22) : const Color(0xFFF8FAFC),
@@ -764,7 +772,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
                           child: TextField(
                             controller: _queryController,
                             focusNode: _inputFocusNode,
-                            enabled: !_isGenerating && !_isLoading,
+                            readOnly: _isGenerating || _isLoading,
                             maxLines: 5,
                             minLines: 1,
                             keyboardType: TextInputType.multiline,

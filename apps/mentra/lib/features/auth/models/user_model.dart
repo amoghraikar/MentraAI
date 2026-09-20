@@ -15,8 +15,8 @@ class UserModel {
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
-      id: json['id'] as String,
-      email: json['email'] as String,
+      id: (json['id'] as String?) ?? 'demo-local-student',
+      email: (json['email'] as String?) ?? 'student@mentra.ai',
       fullName: json['full_name'] as String?,
       isActive: json['is_active'] as bool? ?? true,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now(),

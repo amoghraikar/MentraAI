@@ -117,8 +117,10 @@ class MentraSidebar extends StatelessWidget {
               try {
                 final authCtrl = AuthScope.of(context);
                 final user = authCtrl.currentUser;
-                final name = user?.fullName?.isNotEmpty == true ? user!.fullName! : 'Mentra Student';
-                final email = user?.email.isNotEmpty == true ? user!.email : 'student@mentra.ai';
+                final fullName = user?.fullName;
+                final userEmail = user?.email;
+                final name = (fullName != null && fullName.trim().isNotEmpty) ? fullName.trim() : 'Mentra Student';
+                final email = (userEmail != null && userEmail.trim().isNotEmpty) ? userEmail.trim() : 'student@mentra.ai';
                 final initials = name.split(' ').map((p) => p.isNotEmpty ? p[0] : '').take(2).join().toUpperCase();
 
                 return Container(
