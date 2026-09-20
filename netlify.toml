@@ -1,0 +1,18 @@
+[build]
+  command = "bash ./netlify_build.sh"
+  publish = "apps/mentra/build/web"
+
+[build.environment]
+  FLUTTER_CHANNEL = "stable"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
