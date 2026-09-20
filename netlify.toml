@@ -1,5 +1,5 @@
 [build]
-  command = "bash ./netlify_build.sh"
+  command = "test -f apps/mentra/build/web/index.html && echo 'Deploying prebuilt web release' || bash ./netlify_build.sh"
   publish = "apps/mentra/build/web"
 
 [build.environment]

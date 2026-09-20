@@ -34,6 +34,7 @@ venv/
 ENV/
 .venv/
 build/
+!apps/mentra/build/web/
 develop-eggs/
 dist/
 downloads/
