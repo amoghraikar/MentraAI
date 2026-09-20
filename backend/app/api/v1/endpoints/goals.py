@@ -1,7 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
-from app.core.dependencies import get_current_user, get_db
+from app.core.dependencies import get_current_user_or_local, get_db
 from app.models.user import User
 from app.schemas.goal import (
     GoalCreate,
@@ -17,7 +17,7 @@ router = APIRouter()
 @router.get("", response_model=List[GoalResponse])
 def get_goals(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_local),
 ):
     """Retrieve all goals for the authenticated user."""
     return goal_service.get_user_goals(db, user_id=current_user.id)
@@ -27,7 +27,7 @@ def get_goals(
 def create_goal(
     goal_in: GoalCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_local),
 ):
     """Create a new study goal with optional milestones."""
     return goal_service.create_goal(db, user_id=current_user.id, goal_in=goal_in)
@@ -37,7 +37,7 @@ def create_goal(
 def get_goal(
     goal_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_local),
 ):
     """Retrieve a specific goal by ID."""
     return goal_service.get_user_goal_by_id(
@@ -50,7 +50,7 @@ def update_goal(
     goal_id: str,
     goal_in: GoalUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_local),
 ):
     """Update goal status, title, or target date."""
     return goal_service.update_goal(
@@ -62,7 +62,7 @@ def update_goal(
 def delete_goal(
     goal_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_local),
 ):
     """Delete a goal."""
     goal_service.delete_goal(db, goal_id=goal_id, user_id=current_user.id)
@@ -73,7 +73,7 @@ def toggle_milestone(
     goal_id: str,
     milestone_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_local),
 ):
     """Toggle completion status of a goal milestone."""
     return goal_service.toggle_milestone(

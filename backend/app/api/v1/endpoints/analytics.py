@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from app.core.dependencies import get_current_user, get_db
+from app.core.dependencies import get_current_user_or_local, get_db
 from app.models.user import User
 from app.schemas.analytics import AnalyticsOverviewResponse, TimeRangeEnum
 from app.services.analytics_service import analytics_service
@@ -13,7 +13,7 @@ def get_analytics_overview(
     range: TimeRangeEnum = Query(TimeRangeEnum.SEVEN_DAYS, description="Analytics time window: today, 7d, 30d"),
     timezone_offset: float = Query(0.0, description="Local user timezone offset in hours (e.g. +5.5, -4.0)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_local),
 ) -> AnalyticsOverviewResponse:
     """
     Get comprehensive study analytics, session metrics, focus telemetry,

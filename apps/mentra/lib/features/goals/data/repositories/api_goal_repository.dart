@@ -66,52 +66,85 @@ class ApiGoalRepository implements GoalRepository {
     required DateTime targetDate,
     List<String> milestoneTitles = const [],
   }) async {
-    final subjectId = await _getDefaultSubjectId();
-    final milestonesPayload = milestoneTitles
-        .map((m) => {'title': m, 'is_completed': false})
-        .toList();
+    try {
+      final subjectId = await _getDefaultSubjectId();
+      final milestonesPayload = milestoneTitles
+          .map((m) => {'title': m, 'is_completed': false})
+          .toList();
 
-    final response = await apiClient.post(
-      '/api/v1/goals',
-      body: {
-        'subject_id': subjectId,
-        'title': title,
-        'target_date': targetDate.toUtc().toIso8601String(),
-        'is_completed': false,
-        'milestones': milestonesPayload,
-      },
-    );
-    final goal = _goalFromJson(response as Map<String, dynamic>);
-    return goal.copyWith(subjectTitle: subjectTitle);
+      final response = await apiClient.post(
+        '/api/v1/goals',
+        body: {
+          'subject_id': subjectId,
+          'title': title,
+          'target_date': targetDate.toUtc().toIso8601String(),
+          'is_completed': false,
+          'milestones': milestonesPayload,
+        },
+      );
+      final goal = _goalFromJson(response as Map<String, dynamic>);
+      return goal.copyWith(subjectTitle: subjectTitle);
+    } catch (_) {
+      if (fallbackRepository != null) {
+        return fallbackRepository!.createGoal(
+          title: title,
+          subjectTitle: subjectTitle,
+          targetDate: targetDate,
+          milestoneTitles: milestoneTitles,
+        );
+      }
+      rethrow;
+    }
   }
 
   @override
   Future<GoalModel> updateGoal(GoalModel goal) async {
-    final response = await apiClient.put(
-      '/api/v1/goals/${goal.id}',
-      body: {
-        'title': goal.title,
-        'target_date': goal.targetDate.toUtc().toIso8601String(),
-        'is_completed': goal.isCompleted,
-      },
-    );
-    final updated = _goalFromJson(response as Map<String, dynamic>);
-    return updated.copyWith(
-      subjectTitle: goal.subjectTitle,
-      milestones: goal.milestones,
-    );
+    try {
+      final response = await apiClient.put(
+        '/api/v1/goals/${goal.id}',
+        body: {
+          'title': goal.title,
+          'target_date': goal.targetDate.toUtc().toIso8601String(),
+          'is_completed': goal.isCompleted,
+        },
+      );
+      final updated = _goalFromJson(response as Map<String, dynamic>);
+      return updated.copyWith(
+        subjectTitle: goal.subjectTitle,
+        milestones: goal.milestones,
+      );
+    } catch (_) {
+      if (fallbackRepository != null) {
+        return fallbackRepository!.updateGoal(goal);
+      }
+      rethrow;
+    }
   }
 
   @override
   Future<GoalModel> toggleMilestone(String goalId, String milestoneId) async {
-    await apiClient.post('/api/v1/goals/$goalId/milestones/$milestoneId/toggle');
-    final response = await apiClient.get('/api/v1/goals/$goalId');
-    return _goalFromJson(response as Map<String, dynamic>);
+    try {
+      await apiClient.post('/api/v1/goals/$goalId/milestones/$milestoneId/toggle');
+      final response = await apiClient.get('/api/v1/goals/$goalId');
+      return _goalFromJson(response as Map<String, dynamic>);
+    } catch (_) {
+      if (fallbackRepository != null) {
+        return fallbackRepository!.toggleMilestone(goalId, milestoneId);
+      }
+      rethrow;
+    }
   }
 
   @override
   Future<void> deleteGoal(String id) async {
-    await apiClient.delete('/api/v1/goals/$id');
+    try {
+      await apiClient.delete('/api/v1/goals/$id');
+    } catch (_) {
+      if (fallbackRepository != null) {
+        return fallbackRepository!.deleteGoal(id);
+      }
+      rethrow;
+    }
   }
 
   GoalModel _goalFromJson(Map<String, dynamic> json) {

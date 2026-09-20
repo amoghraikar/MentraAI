@@ -33,6 +33,8 @@ import '../../features/subjects/presentation/subject_workspace_page.dart';
 import '../../features/subjects/presentation/subjects_page.dart';
 import '../../features/subjects/presentation/topic_view_page.dart';
 import '../../features/goals/data/repositories/mock_goal_repository.dart';
+import '../../features/notes/data/repositories/mock_note_repository.dart';
+import '../../features/analytics/data/repositories/mock_analytics_repository.dart';
 import '../../features/study_session/data/repositories/mock_session_repository.dart';
 import '../../features/subjects/data/repositories/mock_subject_repository.dart';
 import '../widgets/mentra_sidebar.dart';
@@ -87,12 +89,14 @@ class _WorkspaceLayoutState extends State<WorkspaceLayout> {
 
     _subjectRepo = widget.subjectRepository ??
         ApiSubjectRepository(apiClient: apiClient, fallbackRepository: MockSubjectRepository());
-    _noteRepo = widget.noteRepository ?? ApiNoteRepository(apiClient: apiClient);
+    _noteRepo = widget.noteRepository ??
+        ApiNoteRepository(apiClient: apiClient, fallbackRepository: MockNoteRepository());
     _goalRepo = widget.goalRepository ??
         ApiGoalRepository(apiClient: apiClient, fallbackRepository: MockGoalRepository());
     _sessionRepo = widget.sessionRepository ??
         ApiSessionRepository(apiClient: apiClient, fallbackRepository: MockSessionRepository());
-    _analyticsRepo = widget.analyticsRepository ?? ApiAnalyticsRepository(apiClient: apiClient);
+    _analyticsRepo = widget.analyticsRepository ??
+        ApiAnalyticsRepository(apiClient: apiClient, fallbackRepository: MockAnalyticsRepository());
     _aiCoachRepo = widget.aiCoachRepository ?? ApiAiCoachRepository(apiClient: apiClient);
 
     _sessionController = SessionController(sessionRepository: _sessionRepo);

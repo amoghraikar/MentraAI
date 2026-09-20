@@ -1,11 +1,16 @@
 import '../../../../core/network/api_client.dart';
 import '../../domain/models/analytics_data.dart';
 import '../../domain/repositories/analytics_repository.dart';
+import 'mock_analytics_repository.dart';
 
 class ApiAnalyticsRepository implements AnalyticsRepository {
-  ApiAnalyticsRepository({required this.apiClient});
+  ApiAnalyticsRepository({
+    required this.apiClient,
+    this.fallbackRepository,
+  });
 
   final ApiClient apiClient;
+  final AnalyticsRepository? fallbackRepository;
 
   @override
   Future<AnalyticsOverviewModel> getAnalyticsSummary({
@@ -18,14 +23,21 @@ class ApiAnalyticsRepository implements AnalyticsRepository {
       );
 
       if (response is Map<String, dynamic>) {
-        return AnalyticsOverviewModel.fromJson(response);
+        final model = AnalyticsOverviewModel.fromJson(response);
+        if (model.hasData) {
+          return model;
+        }
       }
 
-      if (response is List<dynamic>) {
+      if (response is List<dynamic> && response.isNotEmpty) {
         return _deriveFromSessionsList(response, timeRange);
       }
     } catch (_) {
-      // Graceful fallback
+      // Fall through to fallback
+    }
+
+    if (fallbackRepository != null) {
+      return fallbackRepository!.getAnalyticsSummary(timeRange: timeRange);
     }
 
     return AnalyticsOverviewModel(

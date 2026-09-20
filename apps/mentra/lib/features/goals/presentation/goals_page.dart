@@ -35,12 +35,20 @@ class _GoalsPageState extends State<GoalsPage> {
   }
 
   Future<void> _loadGoals() async {
-    final list = await widget.goalRepository.getGoals();
-    if (!mounted) return;
-    setState(() {
-      _goals = list;
-      _isLoading = false;
-    });
+    try {
+      final list = await widget.goalRepository.getGoals();
+      if (!mounted) return;
+      setState(() {
+        _goals = list;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _goals = [];
+        _isLoading = false;
+      });
+    }
   }
 
   void _showNewGoalDialog() async {

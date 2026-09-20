@@ -36,12 +36,20 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   Future<void> _loadNotes() async {
-    final list = await widget.noteRepository.getNotes(searchQuery: _searchQuery);
-    if (!mounted) return;
-    setState(() {
-      _notes = list;
-      _isLoading = false;
-    });
+    try {
+      final list = await widget.noteRepository.getNotes(searchQuery: _searchQuery);
+      if (!mounted) return;
+      setState(() {
+        _notes = list;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _notes = [];
+        _isLoading = false;
+      });
+    }
   }
 
   void _showNewNoteDialog() async {
