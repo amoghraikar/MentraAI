@@ -43,10 +43,11 @@ class AuthService {
       return UserModel.fromJson(response as Map<String, dynamic>);
     } on ApiException catch (e) {
       if (e.statusCode == 503 || e.message.contains('Could not connect') || e.message.contains('Failed to fetch')) {
+        _cachedLocalName = fullName?.trim().isNotEmpty == true ? fullName!.trim() : 'Mentra Student';
         return UserModel(
           id: 'demo-local-student',
           email: email.trim().isNotEmpty ? email.trim() : 'student@mentra.ai',
-          fullName: fullName ?? 'Mentra Student',
+          fullName: _cachedLocalName!,
           isActive: true,
           createdAt: DateTime.now(),
         );
@@ -54,10 +55,11 @@ class AuthService {
       rethrow;
     } catch (e) {
       if (e.toString().contains('Failed to fetch') || e.toString().contains('ClientException')) {
+        _cachedLocalName = fullName?.trim().isNotEmpty == true ? fullName!.trim() : 'Mentra Student';
         return UserModel(
           id: 'demo-local-student',
           email: email.trim().isNotEmpty ? email.trim() : 'student@mentra.ai',
-          fullName: fullName ?? 'Mentra Student',
+          fullName: _cachedLocalName!,
           isActive: true,
           createdAt: DateTime.now(),
         );
@@ -97,7 +99,7 @@ class AuthService {
         final fallbackUser = UserModel(
           id: 'demo-local-student',
           email: email.trim().isNotEmpty ? email.trim() : 'student@mentra.ai',
-          fullName: 'Mentra Student',
+          fullName: _cachedLocalName ?? 'Mentra Student',
           isActive: true,
           createdAt: DateTime.now(),
         );
@@ -111,7 +113,7 @@ class AuthService {
         final fallbackUser = UserModel(
           id: 'demo-local-student',
           email: email.trim().isNotEmpty ? email.trim() : 'student@mentra.ai',
-          fullName: 'Mentra Student',
+          fullName: _cachedLocalName ?? 'Mentra Student',
           isActive: true,
           createdAt: DateTime.now(),
         );
@@ -128,7 +130,7 @@ class AuthService {
       return UserModel(
         id: 'demo-local-student',
         email: 'student@mentra.ai',
-        fullName: 'Mentra Student',
+        fullName: _cachedLocalName ?? 'Mentra Student',
         isActive: true,
         createdAt: DateTime.now(),
       );
@@ -159,9 +161,17 @@ class AuthService {
     }
   }
 
+  static String? _cachedLocalName;
+
   Future<AuthResult?> restoreSession() async {
     final token = await _tokenStorage.getToken();
     if (token == null || token.isEmpty) {
+      return null;
+    }
+
+    // Do not silently bypass authentication on fresh load with the offline fallback token
+    if (token == 'offline-demo-jwt-token') {
+      await _tokenStorage.clearToken();
       return null;
     }
 
@@ -173,6 +183,7 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    _cachedLocalName = null;
     await _tokenStorage.clearToken();
   }
 }

@@ -5,6 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
+import '../../features/auth/presentation/auth_controller.dart';
 import 'mentra_button.dart';
 import 'mentra_logo.dart';
 
@@ -108,6 +109,85 @@ class MentraSidebar extends StatelessWidget {
                     onTap: () => nav.setRoute(route),
                   )).toList(),
             ),
+          ),
+
+          // User Profile & Quick Logout Footer
+          Builder(
+            builder: (context) {
+              try {
+                final authCtrl = AuthScope.of(context);
+                final user = authCtrl.currentUser;
+                final name = user?.fullName?.isNotEmpty == true ? user!.fullName! : 'Mentra Student';
+                final email = user?.email.isNotEmpty == true ? user!.email : 'student@mentra.ai';
+                final initials = name.split(' ').map((p) => p.isNotEmpty ? p[0] : '').take(2).join().toUpperCase();
+
+                return Container(
+                  margin: const EdgeInsets.fromLTRB(AppSpacing.sm, 0, AppSpacing.sm, AppSpacing.sm),
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF141C18) : const Color(0xFFF0F5F2),
+                    borderRadius: AppRadius.borderSm,
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF1F322B) : const Color(0xFFD9E7E0),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 14,
+                        backgroundColor: theme.colorScheme.primary,
+                        child: Text(
+                          initials.isNotEmpty ? initials : 'M',
+                          style: AppTypography.labelSmall.copyWith(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Student: $name',
+                              style: AppTypography.labelSmall.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              email,
+                              style: AppTypography.labelSmall.copyWith(
+                                fontSize: 9,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Sign Out / Switch Account',
+                        icon: const Icon(Icons.logout_rounded, size: 16),
+                        color: theme.colorScheme.onSurfaceVariant,
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        onPressed: () => authCtrl.logout(),
+                      ),
+                    ],
+                  ),
+                );
+              } catch (_) {
+                return const SizedBox.shrink();
+              }
+            },
           ),
         ],
       ),

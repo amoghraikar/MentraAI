@@ -24,7 +24,7 @@ class MentraRoot extends StatefulWidget {
   const MentraRoot({
     super.key,
     this.authService,
-    this.initialShowOnboarding = true,
+    this.initialShowOnboarding = false,
     this.subjectRepository,
     this.noteRepository,
     this.goalRepository,

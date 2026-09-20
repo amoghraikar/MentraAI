@@ -114,9 +114,102 @@ class _AuthViewState extends State<AuthView> {
                     Divider(color: theme.dividerColor, height: 1),
                     const SizedBox(height: AppSpacing.lg),
 
+                    // Mode Switcher Tabs
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF0F0EF),
+                        borderRadius: AppRadius.borderMd,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              borderRadius: AppRadius.borderSm,
+                              onTap: () {
+                                auth.clearError();
+                                setState(() => _isRegisterMode = true);
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: _isRegisterMode
+                                      ? (isDark ? const Color(0xFF2C2C2C) : Colors.white)
+                                      : Colors.transparent,
+                                  borderRadius: AppRadius.borderSm,
+                                  boxShadow: _isRegisterMode
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: 0.08),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 1),
+                                          )
+                                        ]
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'Create Account',
+                                    style: AppTypography.labelMedium.copyWith(
+                                      fontWeight: _isRegisterMode ? FontWeight.w700 : FontWeight.w500,
+                                      color: _isRegisterMode
+                                          ? theme.colorScheme.onSurface
+                                          : theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: InkWell(
+                              borderRadius: AppRadius.borderSm,
+                              onTap: () {
+                                auth.clearError();
+                                setState(() => _isRegisterMode = false);
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: !_isRegisterMode
+                                      ? (isDark ? const Color(0xFF2C2C2C) : Colors.white)
+                                      : Colors.transparent,
+                                  borderRadius: AppRadius.borderSm,
+                                  boxShadow: !_isRegisterMode
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: 0.08),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 1),
+                                          )
+                                        ]
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'Log In',
+                                    style: AppTypography.labelMedium.copyWith(
+                                      fontWeight: !_isRegisterMode ? FontWeight.w700 : FontWeight.w500,
+                                      color: !_isRegisterMode
+                                          ? theme.colorScheme.onSurface
+                                          : theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: AppSpacing.lg),
+
                     // Title & Subtitle
                     Text(
-                      _isRegisterMode ? 'Create Account' : 'Sign In',
+                      _isRegisterMode ? 'Create Your Account' : 'Sign In to Mentra',
                       style: AppTypography.titleLarge.copyWith(
                         fontWeight: FontWeight.w700,
                         color: theme.colorScheme.onSurface,
@@ -125,8 +218,8 @@ class _AuthViewState extends State<AuthView> {
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
                       _isRegisterMode
-                          ? 'Set up your local study profile to get started'
-                          : 'Enter your credentials to access your workspace',
+                          ? 'Set up your study profile to track focus, goals, and notes'
+                          : 'Enter your credentials to access your study workspace',
                       style: AppTypography.bodySmall.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -237,6 +330,23 @@ class _AuthViewState extends State<AuthView> {
                       onPressed: () => _submit(auth),
                     ),
 
+                    const SizedBox(height: AppSpacing.sm),
+
+                    // Quick Guest / Demo Access
+                    MentraButton(
+                      label: 'Explore as Guest (Demo Mode)',
+                      variant: MentraButtonVariant.secondary,
+                      icon: Icons.explore_outlined,
+                      fullWidth: true,
+                      onPressed: () {
+                        auth.clearError();
+                        auth.login(
+                          email: 'student@mentra.ai',
+                          password: 'Password123!',
+                        );
+                      },
+                    ),
+
                     const SizedBox(height: AppSpacing.base),
 
                     // Toggle Register / Login Mode
@@ -267,6 +377,21 @@ class _AuthViewState extends State<AuthView> {
                         ),
                       ),
                     ),
+
+                    if (widget.onBackToOnboarding != null) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: widget.onBackToOnboarding,
+                          icon: const Icon(Icons.info_outline_rounded, size: 14),
+                          label: const Text('View Product Introduction Tour'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                            textStyle: AppTypography.bodySmall,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
