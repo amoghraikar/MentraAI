@@ -183,9 +183,11 @@ def test_focus_behavior_engine_and_scoring() -> None:
     assert obs4.active_alert is not None
     assert obs4.active_alert.type == "FACE_NOT_DETECTED"
 
-    # User returns -> recovers to FOCUSED
-    obs5 = engine.update(face_present=True, is_drowsy=False, orientation="NORMAL_FORWARD", phone_detected=False, timestamp=t0 + 9.5)
-    assert obs5.focus_state == FocusState.FOCUSED
+    # User returns -> transitions through RECOVERING to FOCUSED
+    obs5 = engine.update(face_present=True, is_drowsy=False, orientation="NORMAL_FORWARD", phone_detected=False, timestamp=t0 + 9.0)
+    assert obs5.focus_state == FocusState.RECOVERING
+    obs5b = engine.update(face_present=True, is_drowsy=False, orientation="NORMAL_FORWARD", phone_detected=False, timestamp=t0 + 9.6)
+    assert obs5b.focus_state == FocusState.FOCUSED
 
     # 3. Phone detected for > 1s -> triggers PHONE_DETECTED alert
     engine.update(face_present=True, is_drowsy=False, orientation="NORMAL_FORWARD", phone_detected=True, timestamp=t0 + 10.0)

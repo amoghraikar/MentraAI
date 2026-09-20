@@ -3,6 +3,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../cv_monitoring/domain/models/monitoring_models.dart';
 import '../../cv_monitoring/domain/services/focus_monitoring_service.dart';
+import '../../cv_monitoring/presentation/camera_feed_stub.dart'
+    if (dart.library.html) '../../cv_monitoring/presentation/camera_feed_web.dart'
+    as platform_cv;
 import '../domain/models/session_config.dart';
 import '../domain/models/study_session_record.dart';
 import '../domain/repositories/session_repository.dart';
@@ -53,11 +56,13 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
 
   // Real observed CV durations
   double _totalObservedSeconds = 0.0;
-  double _focusedSeconds = 0.0;
-  double _awaySeconds = 0.0;
-  double _lookingAwaySeconds = 0.0;
-  double _eyesClosedSeconds = 0.0;
-  double _phoneDetectedSeconds = 0.0;
+  double _focusedDuration = 0.0;
+  double _lookingAwayDuration = 0.0;
+  double _eyesClosedDuration = 0.0;
+  double _possibleDrowsinessDuration = 0.0;
+  double _phoneDetectedDuration = 0.0;
+  double _faceNotDetectedDuration = 0.0;
+  double _unknownDuration = 0.0;
   DateTime? _lastObservationTime;
 
   SessionState get state => _state;
@@ -65,12 +70,24 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   int get targetSeconds => _targetSeconds;
   int get distractionsCount => _distractionsCount;
   int get focusScore => _focusScore;
+
+  // Duration getters
   double get totalObservedSeconds => _totalObservedSeconds;
-  double get focusedSeconds => _focusedSeconds;
-  double get awaySeconds => _awaySeconds;
-  double get lookingAwaySeconds => _lookingAwaySeconds;
-  double get eyesClosedSeconds => _eyesClosedSeconds;
-  double get phoneDetectedSeconds => _phoneDetectedSeconds;
+  double get focusedDuration => _focusedDuration;
+  double get lookingAwayDuration => _lookingAwayDuration;
+  double get eyesClosedDuration => _eyesClosedDuration;
+  double get possibleDrowsinessDuration => _possibleDrowsinessDuration;
+  double get phoneDetectedDuration => _phoneDetectedDuration;
+  double get faceNotDetectedDuration => _faceNotDetectedDuration;
+  double get unknownDuration => _unknownDuration;
+
+  // Backward-compatible aliases
+  double get focusedSeconds => _focusedDuration;
+  double get awaySeconds => _faceNotDetectedDuration;
+  double get lookingAwaySeconds => _lookingAwayDuration;
+  double get eyesClosedSeconds => _eyesClosedDuration;
+  double get phoneDetectedSeconds => _phoneDetectedDuration;
+
   FocusEvent? get latestAlertEvent => _latestAlertEvent;
   SessionReflection get selectedReflection => _selectedReflection;
   StudySessionRecord? get lastSavedRecord => _lastSavedRecord;
@@ -78,6 +95,8 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   DateTime? get sessionStartTime => _sessionStartTime;
   DateTime? get pausedAt => _pausedAt;
   DateTime? get completedAt => _completedAt;
+  FocusObservation? _latestObservation;
+  FocusObservation? get latestObservation => _latestObservation;
 
   MonitoringStatus get monitoringStatus =>
       focusMonitoringService?.status ?? MonitoringStatus.uninitialized;
@@ -99,42 +118,21 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
         event.type == FocusEventType.faceAbsent) {
       _distractionsCount++;
       _latestAlertEvent = event;
-      notifyListeners();
-    } else if (event.type == FocusEventType.focusPresent) {
-      if (_latestAlertEvent?.type == FocusEventType.faceAbsent) {
-        _latestAlertEvent = null;
-      }
-      notifyListeners();
     }
-  }
-
-  void dismissLatestAlert() {
-    _latestAlertEvent = null;
     notifyListeners();
   }
 
-  /// Ingest real-time camera computer vision observation directly into focus engine
-  void ingestObservation(FocusObservation observation) {
+  /// Ingest real-time verified CV observation emitted from webcam inference.
+  void recordCvObservation(FocusObservation observation) {
     if (_state != SessionState.active) return;
 
+    _latestObservation = observation;
     final now = observation.timestamp;
     if (_lastObservationTime != null) {
-      final delta = (now.difference(_lastObservationTime!).inMilliseconds / 1000.0).clamp(0.0, 3.0);
-      _totalObservedSeconds += delta;
-
-      if (!observation.isFaceDetected) {
-        _awaySeconds += delta;
-      } else if (observation.phoneDetected) {
-        _phoneDetectedSeconds += delta;
-      } else if (observation.eyeState == EyeState.closed || (observation.ear != null && observation.ear! < 0.20)) {
-        _eyesClosedSeconds += delta;
-      } else if (observation.isDistractionDetected || observation.distractionType != null) {
-        _lookingAwaySeconds += delta;
-      } else {
-        _focusedSeconds += delta;
+      final delta = now.difference(_lastObservationTime!).inMilliseconds / 1000.0;
+      if (delta > 0 && delta < 5.0) {
+        _accumulateObservation(observation, delta);
       }
-
-      _recalculateFocusScore();
     }
     _lastObservationTime = now;
 
@@ -144,12 +142,49 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  void _accumulateObservation(FocusObservation observation, double delta) {
+    final state = observation.focusState;
+    if (state == 'UNKNOWN' ||
+        state == 'CAMERA_ERROR' ||
+        state == 'CV_INITIALIZING' ||
+        state == 'RECOVERING' ||
+        state == 'POSSIBLE_DISTRACTION') {
+      _unknownDuration += delta;
+    } else if (!observation.isFaceDetected || state == 'FACE_NOT_DETECTED') {
+      _faceNotDetectedDuration += delta;
+    } else if (state == 'PHONE_DETECTED' || observation.phoneDetected) {
+      _phoneDetectedDuration += delta;
+    } else if (state == 'POSSIBLE_DROWSINESS') {
+      _possibleDrowsinessDuration += delta;
+    } else if (state == 'EYES_CLOSED' || observation.eyeState == EyeState.closed) {
+      _eyesClosedDuration += delta;
+    } else if (state == 'LOOKING_AWAY' ||
+        state == 'LOOKING_DOWN' ||
+        state == 'LOOKING_UP' ||
+        observation.isDistractionDetected) {
+      _lookingAwayDuration += delta;
+    } else {
+      // FOCUSED
+      _focusedDuration += delta;
+    }
+
+    _recalculateFocusScore();
+  }
+
   void _recalculateFocusScore() {
-    if (_totalObservedSeconds > 0) {
-      final ratio = _focusedSeconds / _totalObservedSeconds;
+    final confirmedObserved = _focusedDuration +
+        _lookingAwayDuration +
+        _eyesClosedDuration +
+        _possibleDrowsinessDuration +
+        _phoneDetectedDuration +
+        _faceNotDetectedDuration;
+
+    _totalObservedSeconds = confirmedObserved + _unknownDuration;
+
+    if (confirmedObserved >= 3.0) {
+      final ratio = _focusedDuration / confirmedObserved;
       _focusScore = (ratio * 100).round().clamp(0, 100);
     } else if (_distractionsCount > 0) {
-      // In synthetic tests or without camera observations, deduce from recorded distractions
       final penalty = _distractionsCount * 3;
       _focusScore = (92 - penalty).clamp(55, 98);
     } else {
@@ -207,11 +242,13 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     _distractionsCount = 0;
     _focusScore = 100;
     _totalObservedSeconds = 0.0;
-    _focusedSeconds = 0.0;
-    _awaySeconds = 0.0;
-    _lookingAwaySeconds = 0.0;
-    _eyesClosedSeconds = 0.0;
-    _phoneDetectedSeconds = 0.0;
+    _focusedDuration = 0.0;
+    _lookingAwayDuration = 0.0;
+    _eyesClosedDuration = 0.0;
+    _possibleDrowsinessDuration = 0.0;
+    _phoneDetectedDuration = 0.0;
+    _faceNotDetectedDuration = 0.0;
+    _unknownDuration = 0.0;
     _lastObservationTime = null;
     _latestAlertEvent = null;
     _sessionStartTime = null;
@@ -243,8 +280,9 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
 
     _startTicker();
 
-    // Start CV Monitoring pipeline
+    // Start CV Monitoring pipeline and backend tracking
     focusMonitoringService?.start();
+    platform_cv.CameraFeedWebHelper.resumeMonitoring();
 
     notifyListeners();
     return true;
@@ -264,10 +302,12 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
           max(0, now.difference(_currentSegmentStartTime!).inSeconds);
     }
     _currentSegmentStartTime = null;
+    _lastObservationTime = null;
     _state = SessionState.paused;
 
-    // Pause CV Monitoring pipeline
+    // Pause CV Monitoring pipeline and freeze backend metrics
     focusMonitoringService?.pause();
+    platform_cv.CameraFeedWebHelper.pauseMonitoring();
 
     notifyListeners();
     return true;
@@ -281,12 +321,14 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
 
     _pausedAt = null;
     _currentSegmentStartTime = DateTime.now();
+    _lastObservationTime = null;
     _state = SessionState.active;
 
     _startTicker();
 
-    // Resume CV Monitoring pipeline
+    // Resume CV Monitoring pipeline and backend tracking
     focusMonitoringService?.resume();
+    platform_cv.CameraFeedWebHelper.resumeMonitoring();
 
     notifyListeners();
     return true;
@@ -307,16 +349,36 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
           max(0, now.difference(_currentSegmentStartTime!).inSeconds);
     }
     _currentSegmentStartTime = null;
+    _lastObservationTime = null;
     _finalElapsedSeconds = _accumulatedActiveSeconds;
-
-    // Stop CV Monitoring pipeline
-    focusMonitoringService?.stop();
-
-    _recalculateFocusScore();
-
     _state = SessionState.completed;
+
+    // Stop and dispose CV resources on session end
+    focusMonitoringService?.stop();
+    platform_cv.CameraFeedWebHelper.resetSession();
+
     notifyListeners();
     return true;
+  }
+
+  /// Abort/cancel active session and return to idle.
+  bool cancelSession() {
+    endSession();
+    reset();
+    return true;
+  }
+
+  void _startTicker() {
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_state == SessionState.active) {
+        if (remainingSeconds <= 0) {
+          endSession();
+        } else {
+          notifyListeners();
+        }
+      }
+    });
   }
 
   void setReflection(SessionReflection reflection) {
@@ -324,24 +386,45 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  /// Idempotently save completed study session to backend.
-  Future<StudySessionRecord?> saveCompletedSession() async {
-    if (_state != SessionState.completed || _isSaving) {
-      return _lastSavedRecord;
+  void clearAlert() {
+    _latestAlertEvent = null;
+    notifyListeners();
+  }
+
+  void dismissLatestAlert() => clearAlert();
+
+  void recordDistraction([String? type]) {
+    if (_state != SessionState.active) return;
+    _distractionsCount++;
+    _recalculateFocusScore();
+    notifyListeners();
+  }
+
+  void ingestObservation(FocusObservation observation) =>
+      recordCvObservation(observation);
+
+  Future<StudySessionRecord?> saveCompletedSession() => saveSessionRecord();
+
+  /// Persist session record to SQLite / API via repository.
+  Future<StudySessionRecord?> saveSessionRecord() async {
+    if (_state != SessionState.completed ||
+        _currentConfig == null ||
+        _sessionStartTime == null) {
+      return null;
     }
+    if (_isSaving) return _lastSavedRecord;
 
     _isSaving = true;
     notifyListeners();
 
     try {
-      final durationMins = max(1, (_finalElapsedSeconds / 60).round());
       final record = StudySessionRecord(
-        id: 'sess_${DateTime.now().millisecondsSinceEpoch}',
-        subjectId: _currentConfig?.subjectId,
-        topicId: _currentConfig?.topicId,
-        subjectTitle: _currentConfig?.subjectTitle ?? 'General Study',
-        topicTitle: _currentConfig?.topicTitle ?? 'Focused Session',
-        durationMinutes: durationMins,
+        id: 'sess_${_sessionStartTime!.millisecondsSinceEpoch}',
+        subjectId: _currentConfig!.subjectId,
+        topicId: _currentConfig!.topicId,
+        subjectTitle: _currentConfig!.subjectTitle,
+        topicTitle: _currentConfig!.topicTitle,
+        durationMinutes: max(1, _finalElapsedSeconds ~/ 60),
         focusScore: _focusScore,
         distractionsCount: _distractionsCount,
         completedAt: _completedAt ?? DateTime.now(),
@@ -353,69 +436,49 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       _lastSavedRecord = record;
-      _state = SessionState.idle;
       _isSaving = false;
+      _state = SessionState.idle;
       notifyListeners();
       return record;
     } catch (_) {
       _isSaving = false;
       notifyListeners();
-      rethrow;
+      return null;
     }
   }
 
-  /// Cancel/abort session and return to idle.
-  void cancelSession() {
+  /// Reset back to initial idle state.
+  void reset() {
     _ticker?.cancel();
-    focusMonitoringService?.stop();
     _state = SessionState.idle;
     _currentConfig = null;
+    _accumulatedActiveSeconds = 0;
+    _finalElapsedSeconds = 0;
+    _distractionsCount = 0;
+    _focusScore = 100;
+    _totalObservedSeconds = 0.0;
+    _focusedDuration = 0.0;
+    _lookingAwayDuration = 0.0;
+    _eyesClosedDuration = 0.0;
+    _possibleDrowsinessDuration = 0.0;
+    _phoneDetectedDuration = 0.0;
+    _faceNotDetectedDuration = 0.0;
+    _unknownDuration = 0.0;
+    _lastObservationTime = null;
+    _latestAlertEvent = null;
     _sessionStartTime = null;
     _currentSegmentStartTime = null;
     _pausedAt = null;
     _completedAt = null;
-    _accumulatedActiveSeconds = 0;
-    _finalElapsedSeconds = 0;
-    _latestAlertEvent = null;
+    _lastSavedRecord = null;
     _isSaving = false;
     notifyListeners();
   }
 
-  /// Telemetry hook for recorded distractions.
-  void recordDistraction({String? category}) {
-    if (_state == SessionState.active) {
-      _distractionsCount++;
-      _recalculateFocusScore();
-      notifyListeners();
-    }
-  }
-
-  /// Legacy helper for mock tests.
-  void recordMockDistraction() {
-    recordDistraction();
-  }
-
-  void _startTicker() {
-    _ticker?.cancel();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_state == SessionState.active) {
-        if (elapsedSeconds >= _targetSeconds && _targetSeconds > 0) {
-          endSession();
-        } else {
-          notifyListeners();
-        }
-      }
-    });
-  }
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _state == SessionState.active) {
-      if (elapsedSeconds >= _targetSeconds && _targetSeconds > 0) {
-        endSession();
-      } else {
-        notifyListeners();
-      }
+    if (state == AppLifecycleState.paused && _state == SessionState.active) {
+      pauseSession();
     }
   }
 

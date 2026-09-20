@@ -33,6 +33,7 @@ class PhoneDetector:
             Path(model_path),
             Path(__file__).resolve().parent.parent.parent / model_path,
             Path(__file__).resolve().parent.parent / model_path,
+            Path(__file__).resolve().parents[3] / model_path,
         ]
         resolved_path = None
         for p in candidate_paths:

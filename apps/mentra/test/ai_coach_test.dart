@@ -31,10 +31,10 @@ void main() {
       expect(history.first.text, contains('Mentra'));
     });
 
-    test('askCoachQuestion generates contextual reply', () async {
+    test('askCoachQuestion returns honest unavailable message when local model disconnected', () async {
       final reply = await repository.askCoachQuestion('How should I schedule my focus?');
       expect(reply.sender, 'coach');
-      expect(reply.text, contains('attention curve'));
+      expect(reply.text, contains("Mentra's local model isn't available right now"));
     });
 
     test('explainConcept produces structured breakdown', () async {

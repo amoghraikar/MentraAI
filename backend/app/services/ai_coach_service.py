@@ -58,32 +58,30 @@ from app.services.ai.providers import (
 class AiCoachService:
     def __init__(self, provider: Optional[BaseAiProvider] = None, local_llm: Optional[LocalLLM] = None):
         self.local_llm = local_llm or local_llm_engine
-        self.provider = provider or LocalLLMProvider()
+        self.provider = provider or AiProviderFactory.get_provider()
 
     def get_config(self) -> AiCoachConfigResponse:
         return AiCoachConfigResponse(
             active_provider="LocalLLM",
             is_cloud_connected=False,
             supported_providers=["LocalLLM"],
-            model=getattr(self.local_llm, "model", "qwen2.5:0.5b"),
+            model=getattr(self.local_llm, "model", "qwen2.5:1.5b"),
             custom_system_prompt=MENTRA_SYSTEM_PROMPT,
         )
 
     async def get_model_status(self) -> LocalLLMStatusResponse:
-        state = self.local_llm.get_state()
-        if state == ModelState.UNINITIALIZED:
-            try:
-                await self.local_llm.initialize()
-                state = self.local_llm.get_state()
-            except Exception:
-                state = self.local_llm.get_state()
+        info = await self.local_llm.get_model_info()
+        is_ready = info.get("is_ready", False)
+        state_str = "READY" if is_ready else (info.get("state") or "ERROR")
+        last_err = info.get("last_error")
+        msg = f"Local LLM Ready ({info.get('name')}, {info.get('parameters')})" if is_ready else (last_err or "Local LLM Not Ready")
 
         return LocalLLMStatusResponse(
-            state="READY",
-            model="Mentra AI",
-            status_message="Mentra AI Ready",
-            is_ready=True,
-            last_error=None,
+            state=state_str,
+            model=info.get("name", "qwen2.5:1.5b"),
+            status_message=msg,
+            is_ready=is_ready,
+            last_error=last_err,
         )
 
     async def cancel_chat(self) -> None:
@@ -208,10 +206,7 @@ class AiCoachService:
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
             ai_logger.error(f"[MENTRA AI] local model generation failed after {latency_ms}ms: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Mentra couldn't generate a response. Try again.",
-            )
+            raise
 
         # 11. Persist coach response
         coach_msg_id = str(uuid.uuid4())
@@ -302,8 +297,10 @@ class AiCoachService:
 
             yield f"data: {json.dumps({'chunk': '', 'done': True, 'id': coach_msg_id, 'message': complete_text})}\n\n"
         except Exception as e:
-            err_json = json.dumps({"error": "Mentra couldn't generate a response. Try again.", "done": True})
-            yield f"data: {err_json}\n\n"
+            ai_logger = logging.getLogger("mentra.ai")
+            ai_logger.error(f"[MENTRA AI] local model stream error: {e}")
+            err_msg = "Mentra's local model isn't available right now. Please ensure the local AI service is running."
+            yield f"data: {json.dumps({'error': err_msg, 'chunk': '', 'done': True, 'id': coach_msg_id})}\n\n"
 
     async def explain_concept(
         self,
@@ -332,11 +329,18 @@ class AiCoachService:
             notes_context=f"Student Notes: {request.student_notes_context}" if request.student_notes_context else "",
         )
 
-        return await self.provider.generate_structured(
-            prompt=prompt,
-            system_prompt=COACH_SYSTEM_PROMPT,
-            response_model=AiCoachExplainResponse,
-        )
+        try:
+            return await self.provider.generate_structured(
+                prompt=prompt,
+                system_prompt=COACH_SYSTEM_PROMPT,
+                response_model=AiCoachExplainResponse,
+            )
+        except Exception:
+            return await DynamicCognitiveAiProvider().generate_structured(
+                prompt=prompt,
+                system_prompt=COACH_SYSTEM_PROMPT,
+                response_model=AiCoachExplainResponse,
+            )
 
     async def evaluate_intervention(
         self,
@@ -352,11 +356,18 @@ class AiCoachService:
             trigger_reason=request.trigger_reason,
         )
 
-        return await self.provider.generate_structured(
-            prompt=prompt,
-            system_prompt=COACH_SYSTEM_PROMPT,
-            response_model=AiCoachInterventionResponse,
-        )
+        try:
+            return await self.provider.generate_structured(
+                prompt=prompt,
+                system_prompt=COACH_SYSTEM_PROMPT,
+                response_model=AiCoachInterventionResponse,
+            )
+        except Exception:
+            return await DynamicCognitiveAiProvider().generate_structured(
+                prompt=prompt,
+                system_prompt=COACH_SYSTEM_PROMPT,
+                response_model=AiCoachInterventionResponse,
+            )
 
     async def analyze_session(
         self,
@@ -374,11 +385,18 @@ class AiCoachService:
             reflection=request.reflection,
         )
 
-        analysis = await self.provider.generate_structured(
-            prompt=prompt,
-            system_prompt=COACH_SYSTEM_PROMPT,
-            response_model=AiCoachSessionAnalysisResponse,
-        )
+        try:
+            analysis = await self.provider.generate_structured(
+                prompt=prompt,
+                system_prompt=COACH_SYSTEM_PROMPT,
+                response_model=AiCoachSessionAnalysisResponse,
+            )
+        except Exception:
+            analysis = await DynamicCognitiveAiProvider().generate_structured(
+                prompt=prompt,
+                system_prompt=COACH_SYSTEM_PROMPT,
+                response_model=AiCoachSessionAnalysisResponse,
+            )
         analysis.session_id = request.session_id
         return analysis
 
@@ -402,11 +420,18 @@ class AiCoachService:
             topics_list=topics_str,
         )
 
-        return await self.provider.generate_structured(
-            prompt=prompt,
-            system_prompt=COACH_SYSTEM_PROMPT,
-            response_model=AiCoachStudyPlanResponse,
-        )
+        try:
+            return await self.provider.generate_structured(
+                prompt=prompt,
+                system_prompt=COACH_SYSTEM_PROMPT,
+                response_model=AiCoachStudyPlanResponse,
+            )
+        except Exception:
+            return await DynamicCognitiveAiProvider().generate_structured(
+                prompt=prompt,
+                system_prompt=COACH_SYSTEM_PROMPT,
+                response_model=AiCoachStudyPlanResponse,
+            )
 
     def get_insights(
         self,

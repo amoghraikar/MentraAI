@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 import '../domain/models/monitoring_models.dart';
 
+/// Helper stub for non-web environments.
+class CameraFeedWebHelper {
+  static Future<bool> startCalibration() async => true;
+  static Future<CVBaseline?> finishCalibration() async => null;
+  static Future<void> pauseMonitoring() async {}
+  static Future<void> resumeMonitoring() async {}
+  static Future<void> resetSession() async {}
+}
+
 /// Stub camera feed widget for non-web / testing environments
 Widget buildPlatformCameraView({
   required String viewId,
   required bool isMirrored,
   void Function(RealTimeCvTelemetry telemetry)? onTelemetry,
+  void Function(double progress, String quality, String message)? onCalibrationProgress,
+  bool isCalibrating = false,
 }) {
   return Container(
     color: const Color(0xFF101418),

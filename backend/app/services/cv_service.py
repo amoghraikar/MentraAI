@@ -1,5 +1,6 @@
 """Backend Computer Vision Service bridge to the local cv-engine."""
 
+from dataclasses import asdict
 import logging
 from pathlib import Path
 import sys
@@ -16,10 +17,11 @@ if CV_ENGINE_DIR.exists() and str(CV_ENGINE_DIR) not in sys.path:
     sys.path.insert(0, str(CV_ENGINE_DIR))
 
 try:
-    from src import CvEngine, FrameDecoder
+    from src import CVBaseline, CvEngine, FrameDecoder
 except Exception as e:
     logging.getLogger("mentra.cv").error("Failed to import CvEngine: %s", e)
     CvEngine = None
+    CVBaseline = None
     FrameDecoder = None
 
 logger = logging.getLogger("mentra.cv")
@@ -67,6 +69,59 @@ class CvService:
         frame = FrameDecoder.decode_base64(b64_image)
         result = self.engine.process_frame(frame, timestamp=timestamp)
         return result.to_dict()
+
+    def start_calibration(self) -> None:
+        """Start calibration session."""
+        if self.engine:
+            self.engine.start_calibration()
+
+    def process_calibration_frame(
+        self,
+        b64_image: str,
+        timestamp: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Decode base64 frame and add to calibration accumulator."""
+        if not self.engine or FrameDecoder is None:
+            raise RuntimeError("Computer vision engine is unavailable.")
+        frame = FrameDecoder.decode_base64(b64_image)
+        return self.engine.process_calibration_frame(frame, timestamp=timestamp)
+
+    def finish_calibration(self) -> Optional[Dict[str, Any]]:
+        """Finalize calibration and return baseline dict."""
+        if not self.engine:
+            return None
+        baseline = self.engine.finish_calibration()
+        return baseline.to_dict() if baseline else None
+
+    def get_baseline(self) -> Optional[Dict[str, Any]]:
+        """Get currently active baseline."""
+        if not self.engine or not self.engine.current_baseline:
+            return None
+        return self.engine.current_baseline.to_dict()
+
+    def set_baseline(self, baseline_data: Dict[str, Any]) -> None:
+        """Set baseline from dictionary."""
+        if self.engine and CVBaseline:
+            baseline = CVBaseline.from_dict(baseline_data)
+            self.engine.set_baseline(baseline)
+
+    def evaluate_quality(self, b64_image: str) -> Dict[str, Any]:
+        """Evaluate camera quality without processing focus behaviors."""
+        if not self.engine or FrameDecoder is None:
+            raise RuntimeError("Computer vision engine is unavailable.")
+        frame = FrameDecoder.decode_base64(b64_image)
+        res = self.engine.evaluate_quality(frame)
+        return res.to_dict()
+
+    def pause_session(self) -> None:
+        """Pause focus monitoring accumulation."""
+        if self.engine:
+            self.engine.pause()
+
+    def resume_session(self) -> None:
+        """Resume focus monitoring accumulation."""
+        if self.engine:
+            self.engine.resume()
 
     def reset_session(self) -> None:
         """Reset temporal smoothing and metrics counters."""

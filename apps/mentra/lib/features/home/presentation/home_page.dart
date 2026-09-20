@@ -37,13 +37,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadData() async {
-    final sessions = await widget.sessionRepository.getRecentSessions(limit: 4);
-    final stats = await widget.sessionRepository.getSessionStatistics();
-    if (!mounted) return;
-    setState(() {
-      _recentSessions = sessions;
-      _stats = stats;
-    });
+    try {
+      final sessions = await widget.sessionRepository.getRecentSessions(limit: 4);
+      final stats = await widget.sessionRepository.getSessionStatistics();
+      if (!mounted) return;
+      setState(() {
+        _recentSessions = sessions;
+        _stats = stats;
+      });
+    } catch (e) {
+      // Non-fatal: handled gracefully by fallback repository
+    }
   }
 
   @override

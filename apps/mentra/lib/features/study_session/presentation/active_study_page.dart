@@ -416,7 +416,9 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
               String statusText;
               Color statusColor;
 
+              final obs = sessionController.latestObservation;
               final alert = sessionController.latestAlertEvent;
+
               if (isPaused) {
                 statusText = 'Paused';
                 statusColor = Colors.orange;
@@ -425,23 +427,80 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
                 statusColor = Colors.grey;
               } else if (monitoringStatus == MonitoringStatus.unavailable ||
                   monitoringStatus == MonitoringStatus.error) {
-                statusText = 'CV Offline';
-                statusColor = Colors.grey;
+                statusText = 'Camera Error';
+                statusColor = Colors.redAccent;
+              } else if (obs != null) {
+                switch (obs.focusState) {
+                  case 'FOCUSED':
+                    statusText = 'Focused';
+                    statusColor = AppColors.success;
+                    break;
+                  case 'LOOKING_AWAY':
+                    statusText = 'Looking Away';
+                    statusColor = Colors.amberAccent;
+                    break;
+                  case 'LOOKING_DOWN':
+                    statusText = 'Looking Down';
+                    statusColor = Colors.amberAccent;
+                    break;
+                  case 'POSSIBLE_DROWSINESS':
+                    statusText = 'Possible Drowsiness';
+                    statusColor = Colors.amberAccent;
+                    break;
+                  case 'EYES_CLOSED':
+                    statusText = 'Eyes Closed';
+                    statusColor = Colors.amberAccent;
+                    break;
+                  case 'PHONE_DETECTED':
+                    statusText = 'Phone Detected';
+                    statusColor = Colors.redAccent;
+                    break;
+                  case 'FACE_NOT_DETECTED':
+                    statusText = 'Face Not Detected';
+                    statusColor = Colors.orangeAccent;
+                    break;
+                  case 'RECOVERING':
+                    statusText = 'Recovering';
+                    statusColor = Colors.lightBlueAccent;
+                    break;
+                  case 'POSSIBLE_DISTRACTION':
+                    statusText = 'Monitoring';
+                    statusColor = Colors.lightBlueAccent;
+                    break;
+                  case 'CAMERA_ERROR':
+                    statusText = 'Camera Error';
+                    statusColor = Colors.redAccent;
+                    break;
+                  case 'CV_INITIALIZING':
+                    statusText = 'CV Initializing';
+                    statusColor = Colors.lightBlueAccent;
+                    break;
+                  case 'UNKNOWN':
+                  default:
+                    statusText = 'Unknown';
+                    statusColor = Colors.grey;
+                    break;
+                }
               } else if (alert?.type == FocusEventType.faceAbsent) {
-                statusText = 'Away';
+                statusText = 'Face Not Detected';
                 statusColor = Colors.orangeAccent;
               } else if (alert?.type == FocusEventType.drowsinessDetected) {
-                statusText = 'Eyes Closed';
+                statusText = 'Possible Drowsiness';
                 statusColor = Colors.amberAccent;
               } else if (alert != null) {
-                statusText = 'Distracted';
+                statusText = 'Looking Away';
                 statusColor = Colors.amberAccent;
-              } else {
+              } else if (monitoringStatus == MonitoringStatus.running) {
                 statusText = 'Focused';
                 statusColor = AppColors.success;
+              } else {
+                statusText = 'Unknown';
+                statusColor = Colors.grey;
               }
 
-              final scoreText = 'Score: ${sessionController.focusScore}%';
+              final scoreText = sessionController.totalObservedSeconds >= 3.0
+                  ? 'Score: ${sessionController.focusScore}%'
+                  : 'Score: --';
 
               return FittedBox(
                 fit: BoxFit.scaleDown,
@@ -487,6 +546,49 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
                 ),
               );
             },
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // Phase 11: Real Observed Session Duration Breakdown
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF101318) : const Color(0xFFF0F2F5),
+              borderRadius: AppRadius.borderSm,
+            ),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                _buildObservedPill(
+                  label: 'FOCUSED',
+                  durationSec: sessionController.focusedDuration,
+                  color: AppColors.success,
+                ),
+                _buildObservedPill(
+                  label: 'LOOKING AWAY',
+                  durationSec: sessionController.lookingAwayDuration,
+                  color: Colors.amberAccent,
+                ),
+                _buildObservedPill(
+                  label: 'EYES CLOSED',
+                  durationSec: sessionController.eyesClosedDuration +
+                      sessionController.possibleDrowsinessDuration,
+                  color: Colors.amber,
+                ),
+                _buildObservedPill(
+                  label: 'FACE NOT DETECTED',
+                  durationSec: sessionController.faceNotDetectedDuration,
+                  color: Colors.orangeAccent,
+                ),
+                if (sessionController.phoneDetectedDuration > 0)
+                  _buildObservedPill(
+                    label: 'PHONE',
+                    durationSec: sessionController.phoneDetectedDuration,
+                    color: Colors.redAccent,
+                  ),
+              ],
+            ),
           ),
         ],
       ),
@@ -603,6 +705,47 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildObservedPill({
+    required String label,
+    required double durationSec,
+    required Color color,
+  }) {
+    final s = durationSec.toInt();
+    final m = s ~/ 60;
+    final r = s % 60;
+    final durStr = '${m}m ${r.toString().padLeft(2, "0")}s';
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 5,
+          height: 5,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '$label: ',
+          style: TextStyle(
+            fontSize: 9.0,
+            fontWeight: FontWeight.w700,
+            color: Colors.grey.shade400,
+            letterSpacing: 0.3,
+          ),
+        ),
+        Text(
+          durStr,
+          style: TextStyle(
+            fontSize: 9.0,
+            fontWeight: FontWeight.w800,
+            color: color,
+            fontFamily: 'monospace',
+          ),
+        ),
+      ],
     );
   }
 }

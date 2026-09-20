@@ -1021,7 +1021,7 @@ class UnconfiguredAiProvider(BaseAiProvider):
 
 
 class LocalLLMProvider(BaseAiProvider):
-    """Canonical Local LLM Provider wrapping LocalLLM engine."""
+    """Canonical Local LLM Provider wrapping LocalLLM engine with automatic cognitive fallback."""
 
     def __init__(self, model: Optional[str] = None, base_url: Optional[str] = None):
         from app.services.ai.local_llm import local_llm_engine
@@ -1082,7 +1082,7 @@ class LocalLLMProvider(BaseAiProvider):
 
 
 class AiProviderFactory:
-    """Factory that defaults to canonical LocalLLM."""
+    """Factory to instantiate AI Provider based on runtime environment."""
 
     @staticmethod
     def get_provider(
@@ -1093,9 +1093,17 @@ class AiProviderFactory:
     ) -> BaseAiProvider:
         name = (provider_name or os.getenv("AI_PROVIDER", "local")).lower()
 
-        if name in ("local", "localllm", "ollama", "auto"):
+        if name in ("ollama", "local", "localllm", "auto"):
             return LocalLLMProvider(model=model, base_url=base_url)
-        elif name in ("cognitive", "heuristic", "offline"):
+        elif name == "openai" and (api_key or os.getenv("OPENAI_API_KEY")):
+            return OpenAiProvider(api_key=api_key, model=model, base_url=base_url)
+        elif name == "gemini" and (api_key or os.getenv("GEMINI_API_KEY")):
+            return GeminiAiProvider(api_key=api_key, model=model)
+        elif name == "groq" and (api_key or os.getenv("GROQ_API_KEY")):
+            return GroqProvider(api_key=api_key, model=model)
+        elif name == "openrouter" and (api_key or os.getenv("OPENROUTER_API_KEY")):
+            return OpenRouterProvider(api_key=api_key, model=model)
+        elif name in ("cognitive", "heuristic"):
             return DynamicCognitiveAiProvider()
         else:
             return LocalLLMProvider(model=model, base_url=base_url)

@@ -2,20 +2,22 @@ import 'dart:convert';
 import '../../../../core/network/api_client.dart';
 import '../../domain/models/coach_insight.dart';
 import '../../domain/repositories/ai_coach_repository.dart';
+import 'mock_ai_coach_repository.dart';
 
 class ApiAiCoachRepository implements AiCoachRepository {
   ApiAiCoachRepository({
     required this.apiClient,
     AiCoachRepository? fallbackRepository,
-  });
+  }) : _fallbackRepository = fallbackRepository ?? MockAiCoachRepository();
 
   final ApiClient apiClient;
+  final AiCoachRepository _fallbackRepository;
 
   @override
   Future<List<CoachInsightModel>> getCoachInsights() async {
     try {
       final res = await apiClient.get('/api/v1/ai-coach/insights');
-      if (res is List) {
+      if (res is List && res.isNotEmpty) {
         return res.map((item) {
           final m = item as Map<String, dynamic>;
           return CoachInsightModel(
@@ -29,9 +31,9 @@ class ApiAiCoachRepository implements AiCoachRepository {
         }).toList();
       }
     } catch (_) {
-      // Network error
+      // Network error, fall through to fallback
     }
-    return [];
+    return _fallbackRepository.getCoachInsights();
   }
 
   @override
@@ -51,11 +53,10 @@ class ApiAiCoachRepository implements AiCoachRepository {
           );
         }).toList();
       }
-      return [];
     } catch (_) {
-      // Network error
+      // Network error, fall through to fallback
     }
-    return [];
+    return _fallbackRepository.getInitialChatHistory();
   }
 
   @override
@@ -96,27 +97,26 @@ class ApiAiCoachRepository implements AiCoachRepository {
         },
       );
       if (res is Map<String, dynamic>) {
-        return ChatMessage(
-          id: res['id'] as String? ?? 'msg_${DateTime.now().millisecondsSinceEpoch}',
-          sender: res['sender'] as String? ?? 'coach',
-          text: res['message'] as String? ?? '',
-          timestamp: res['timestamp'] != null
-              ? DateTime.tryParse(res['timestamp'].toString()) ?? DateTime.now()
-              : DateTime.now(),
-        );
+        final text = res['message'] as String? ?? '';
+        if (text.isNotEmpty && !text.contains("couldn't generate a response")) {
+          return ChatMessage(
+            id: res['id'] as String? ?? 'msg_${DateTime.now().millisecondsSinceEpoch}',
+            sender: res['sender'] as String? ?? 'coach',
+            text: text,
+            timestamp: res['timestamp'] != null
+                ? DateTime.tryParse(res['timestamp'].toString()) ?? DateTime.now()
+                : DateTime.now(),
+          );
+        }
       }
     } catch (_) {
-      return ChatMessage(
-        id: 'err_${DateTime.now().millisecondsSinceEpoch}',
-        sender: 'coach',
-        text: 'Mentra couldn\'t generate a response.\nTry again.',
-        timestamp: DateTime.now(),
-      );
+      // Offline or network error: return honest message
     }
+
     return ChatMessage(
-      id: 'err_${DateTime.now().millisecondsSinceEpoch}',
+      id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
       sender: 'coach',
-      text: 'Mentra couldn\'t generate a response.\nTry again.',
+      text: "Mentra's local model isn't available right now. Please ensure the local AI service is running.",
       timestamp: DateTime.now(),
     );
   }
@@ -129,6 +129,7 @@ class ApiAiCoachRepository implements AiCoachRepository {
     List<ChatMessage>? history,
     String? customSystemPrompt,
   }) async* {
+    bool receivedAnyChunk = false;
     try {
       final body = <String, dynamic>{
         'message': question,
@@ -165,11 +166,14 @@ class ApiAiCoachRepository implements AiCoachRepository {
             try {
               final data = jsonDecode(jsonStr);
               if (data is Map<String, dynamic>) {
-                if (data['error'] != null) {
-                  throw Exception(data['error']);
+                if (data['error'] != null ||
+                    (data['message'] != null &&
+                        data['message'].toString().contains("couldn't generate a response"))) {
+                  throw Exception(data['error'] ?? data['message']);
                 }
                 final chunk = data['chunk'] as String? ?? '';
                 if (chunk.isNotEmpty) {
+                  receivedAnyChunk = true;
                   yield chunk;
                 }
                 if (data['done'] == true) {
@@ -177,22 +181,17 @@ class ApiAiCoachRepository implements AiCoachRepository {
                 }
               }
             } catch (e) {
-              if (e is Exception && e.toString().contains("Mentra couldn't")) {
+              if (e is Exception && !e.toString().contains("Format")) {
                 rethrow;
               }
             }
           }
         }
       }
-    } catch (_) {
-      final fallback = await askCoachQuestion(
-        question,
-        subjectId: subjectId,
-        topicId: topicId,
-        history: history,
-        customSystemPrompt: customSystemPrompt,
-      );
-      yield fallback.text;
+    } catch (e) {
+      if (!receivedAnyChunk) {
+        yield "Mentra's local model isn't available right now. Please ensure the local AI service is running.";
+      }
     }
   }
 
@@ -205,10 +204,10 @@ class ApiAiCoachRepository implements AiCoachRepository {
       }
     } catch (_) {}
     return {
-      'state': 'READY',
-      'model': 'Mentra AI',
-      'status_message': 'Mentra AI Ready',
-      'is_ready': true,
+      'state': 'OFFLINE',
+      'model': 'local-llm',
+      'status_message': "Mentra's local model isn't available right now.",
+      'is_ready': false,
     };
   }
 

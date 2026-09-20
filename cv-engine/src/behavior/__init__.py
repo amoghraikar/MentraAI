@@ -1,13 +1,18 @@
-"""Real Focus Classification, Temporal Smoothing, Focus Scoring & Alert Engine."""
+"""Real Focus Classification, Temporal State Machine, Alert Policy & Metrics Engine."""
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass
 from enum import Enum
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, Optional
+
+from .alert_policy import AlertPolicy, FocusAlert
+from .metrics import SessionMetrics, SessionObservationAccumulator
+from .temporal import TemporalConditionTracker
 
 
 class FocusState(str, Enum):
     FOCUSED = "FOCUSED"
+    POSSIBLE_DISTRACTION = "POSSIBLE_DISTRACTION"
     LOOKING_AWAY = "LOOKING_AWAY"
     LOOKING_DOWN = "LOOKING_DOWN"
     LOOKING_UP = "LOOKING_UP"
@@ -15,43 +20,30 @@ class FocusState(str, Enum):
     POSSIBLE_DROWSINESS = "POSSIBLE_DROWSINESS"
     PHONE_DETECTED = "PHONE_DETECTED"
     FACE_NOT_DETECTED = "FACE_NOT_DETECTED"
+    RECOVERING = "RECOVERING"
     UNKNOWN = "UNKNOWN"
+    CAMERA_ERROR = "CAMERA_ERROR"
+    CV_INITIALIZING = "CV_INITIALIZING"
 
 
-@dataclass
-class FocusAlert:
-    id: str
-    type: str  # e.g. "PHONE_DETECTED", "LOOKING_AWAY", "POSSIBLE_DROWSINESS", "FACE_NOT_DETECTED"
-    timestamp: float
-    message: str
-    severity: str = "warning"  # "info", "warning", "critical"
-
-
-@dataclass
-class SessionMetrics:
-    total_observed_seconds: float = 0.0
-    focused_seconds: float = 0.0
-    away_seconds: float = 0.0
-    looking_away_seconds: float = 0.0
-    looking_down_seconds: float = 0.0
-    drowsy_seconds: float = 0.0
-    phone_seconds: float = 0.0
-    focus_score: int = 100
-    distraction_count: int = 0
-    drowsiness_count: int = 0
-    phone_count: int = 0
+class ConfidenceLevel(str, Enum):
+    HIGH_CONFIDENCE = "HIGH_CONFIDENCE"
+    MEDIUM_CONFIDENCE = "MEDIUM_CONFIDENCE"
+    LOW_CONFIDENCE = "LOW_CONFIDENCE"
+    UNKNOWN = "UNKNOWN"
 
 
 @dataclass
 class BehaviorObservation:
     timestamp: float
     focus_state: FocusState
+    confidence_level: ConfidenceLevel
     active_alert: Optional[FocusAlert] = None
     session_metrics: Optional[SessionMetrics] = None
 
 
 class FocusBehaviorEngine:
-    """Combines facial, eye, pose, and object signals through temporal debouncing
+    """Temporal state machine combining facial, eye, pose, and phone signals
 
     to produce honest focus states, non-spammy alerts, and verified focus scores.
     """
@@ -59,201 +51,217 @@ class FocusBehaviorEngine:
     def __init__(
         self,
         face_absent_threshold_seconds: float = 2.0,
-        looking_away_threshold_seconds: float = 1.2,
-        looking_down_threshold_seconds: float = 1.2,
+        looking_away_threshold_seconds: float = 1.3,
+        looking_down_threshold_seconds: float = 1.5,
         phone_threshold_seconds: float = 1.0,
-        alert_cooldown_seconds: float = 6.0,
+        recovery_duration_seconds: float = 0.5,
+        alert_cooldown_seconds: float = 8.0,
     ) -> None:
-        self.face_absent_threshold = face_absent_threshold_seconds
-        self.looking_away_threshold = looking_away_threshold_seconds
-        self.looking_down_threshold = looking_down_threshold_seconds
-        self.phone_threshold = phone_threshold_seconds
-        self.alert_cooldown = alert_cooldown_seconds
+        # Temporal condition debouncers
+        self.face_absent_tracker = TemporalConditionTracker(face_absent_threshold_seconds)
+        self.looking_away_tracker = TemporalConditionTracker(looking_away_threshold_seconds)
+        self.looking_down_tracker = TemporalConditionTracker(looking_down_threshold_seconds)
+        self.phone_tracker = TemporalConditionTracker(phone_threshold_seconds)
 
-        # State timestamps for temporal debouncing
-        self._face_absent_start: Optional[float] = None
-        self._looking_away_start: Optional[float] = None
-        self._looking_down_start: Optional[float] = None
-        self._phone_start: Optional[float] = None
+        self.recovery_duration = recovery_duration_seconds
+        self.recovery_tracker = TemporalConditionTracker(recovery_duration_seconds)
 
-        # Cooldown trackers
-        self._last_alert_time: Dict[str, float] = {}
+        # Central alert policy
+        self.alert_policy = AlertPolicy(default_cooldown_seconds=alert_cooldown_seconds)
 
-        # Cumulative session metrics
-        self.metrics = SessionMetrics()
-        self._last_tick_time: Optional[float] = None
+        # Cumulative session metrics accumulator
+        self.accumulator = SessionObservationAccumulator()
+
+        # Internal state
         self._current_state = FocusState.UNKNOWN
+        self._was_distracted = False
+
+    def pause(self) -> None:
+        """Pause monitoring and time accumulation."""
+        self.accumulator.pause()
+
+    def resume(self, now: Optional[float] = None) -> None:
+        """Resume monitoring."""
+        self.accumulator.resume(now)
+
+    @property
+    def is_paused(self) -> bool:
+        return self.accumulator.is_paused
+
+    def compute_confidence(
+        self,
+        face_present: bool,
+        face_confidence: float,
+        camera_quality_status: str,
+        landmark_quality: float,
+    ) -> ConfidenceLevel:
+        """Determine honest detector confidence from real signals."""
+        if not face_present or camera_quality_status == "UNAVAILABLE":
+            return ConfidenceLevel.UNKNOWN
+
+        if camera_quality_status == "GOOD" and face_confidence >= 0.65 and landmark_quality >= 0.9:
+            return ConfidenceLevel.HIGH_CONFIDENCE
+        elif camera_quality_status in ("GOOD", "FAIR") and face_confidence >= 0.4:
+            return ConfidenceLevel.MEDIUM_CONFIDENCE
+        else:
+            return ConfidenceLevel.LOW_CONFIDENCE
 
     def update(
         self,
         face_present: bool,
         is_drowsy: bool,
-        orientation: str,  # "NORMAL_FORWARD", "LOOKING_AWAY", "LOOKING_DOWN", "LOOKING_UP", "UNKNOWN"
+        orientation: str,  # NORMAL_FORWARD, POSSIBLE_LOOKING_AWAY, LOOKING_AWAY, LOOKING_DOWN, LOOKING_UP, UNKNOWN
         phone_detected: bool,
+        face_confidence: float = 0.9,
+        camera_quality_status: str = "GOOD",
+        landmark_quality: float = 1.0,
+        eye_state: str = "NORMAL_OPEN",
         timestamp: Optional[float] = None,
     ) -> BehaviorObservation:
-        """Ingest instantaneous signals from detectors and apply temporal debouncing."""
+        """Ingest instantaneous signals from detectors and run temporal state transitions."""
         now = timestamp if timestamp is not None else time.time()
 
-        # Update elapsed time for session metrics
-        if self._last_tick_time is not None:
-            delta = max(0.0, min(10.0, now - self._last_tick_time))
-            self._accumulate_metrics(delta, self._current_state)
-        self._last_tick_time = now
+        confidence = self.compute_confidence(
+            face_present=face_present,
+            face_confidence=face_confidence,
+            camera_quality_status=camera_quality_status,
+            landmark_quality=landmark_quality,
+        )
+
+        alert: Optional[FocusAlert] = None
+
+        # 0. Camera Feed / Detector Failure
+        if camera_quality_status == "UNAVAILABLE":
+            self._current_state = FocusState.CAMERA_ERROR
+            metrics = self.accumulator.tick(self._current_state.value, now)
+            return BehaviorObservation(now, self._current_state, confidence, None, metrics)
 
         # 1. Face Presence Evaluation
+        absent_dur = self.face_absent_tracker.update(not face_present, now)
         if not face_present:
-            self._looking_away_start = None
-            self._looking_down_start = None
-            self._phone_start = None
+            # Reset other trackers
+            self.looking_away_tracker.reset()
+            self.looking_down_tracker.reset()
+            self.phone_tracker.reset()
+            self.recovery_tracker.reset()
 
-            if self._face_absent_start is None:
-                self._face_absent_start = now
-
-            absent_duration = now - self._face_absent_start
-            if absent_duration >= self.face_absent_threshold:
+            if self.face_absent_tracker.is_triggered:
                 self._current_state = FocusState.FACE_NOT_DETECTED
-                alert = self._create_alert(
-                    alert_type="FACE_NOT_DETECTED",
-                    message="No face detected in camera view.",
-                    now=now,
-                    severity="warning",
-                )
-                return BehaviorObservation(now, self._current_state, alert, self.metrics)
+                self._was_distracted = True
+                alert = self.alert_policy.create_alert("FACE_NOT_DETECTED", now)
             else:
-                return BehaviorObservation(now, self._current_state, None, self.metrics)
+                # Brief absence: do not jump to distraction alert yet
+                self._current_state = FocusState.POSSIBLE_DISTRACTION
 
-        # Face is confirmed present
-        self._face_absent_start = None
+            metrics = self.accumulator.tick(self._current_state.value, now)
+            return BehaviorObservation(now, self._current_state, confidence, alert, metrics)
 
-        # 2. Phone Detection Evaluation (Highest priority distraction)
+        # 2. Phone Detection Evaluation (Highest priority physical distraction)
+        phone_dur = self.phone_tracker.update(phone_detected, now)
         if phone_detected:
-            if self._phone_start is None:
-                self._phone_start = now
-
-            if now - self._phone_start >= self.phone_threshold:
+            if self.phone_tracker.is_triggered:
                 self._current_state = FocusState.PHONE_DETECTED
-                alert = self._create_alert(
-                    alert_type="PHONE_DETECTED",
-                    message="Phone detected in study view. Put device away to stay focused.",
-                    now=now,
-                    severity="critical",
-                )
-                if alert:
-                    self.metrics.phone_count += 1
-                return BehaviorObservation(now, self._current_state, alert, self.metrics)
-        else:
-            self._phone_start = None
+                self._was_distracted = True
+                alert = self.alert_policy.create_alert("PHONE_DETECTED", now)
+            else:
+                self._current_state = FocusState.POSSIBLE_DISTRACTION
+
+            metrics = self.accumulator.tick(self._current_state.value, now)
+            return BehaviorObservation(now, self._current_state, confidence, alert, metrics)
 
         # 3. Drowsiness / Eye Closure Evaluation
         if is_drowsy:
             self._current_state = FocusState.POSSIBLE_DROWSINESS
-            alert = self._create_alert(
-                alert_type="POSSIBLE_DROWSINESS",
-                message="Prolonged eye closure detected. Take a quick stretch or sip of water.",
-                now=now,
-                severity="warning",
-            )
-            if alert:
-                self.metrics.drowsiness_count += 1
-            return BehaviorObservation(now, self._current_state, alert, self.metrics)
+            self._was_distracted = True
+            alert = self.alert_policy.create_alert("POSSIBLE_DROWSINESS", now)
+            metrics = self.accumulator.tick(self._current_state.value, now)
+            return BehaviorObservation(now, self._current_state, confidence, alert, metrics)
+        elif eye_state == "EYES_CLOSED":
+            # Momentary closure past blink threshold but before sustained drowsiness
+            self._current_state = FocusState.EYES_CLOSED
+            metrics = self.accumulator.tick(self._current_state.value, now)
+            return BehaviorObservation(now, self._current_state, confidence, None, metrics)
 
-        # 4. Head Pose / Gaze Evaluation
+        # 4. Head Pose / Gaze Deviation Evaluation
         if orientation == "LOOKING_AWAY":
-            self._looking_down_start = None
-            if self._looking_away_start is None:
-                self._looking_away_start = now
+            self.looking_down_tracker.reset()
+            self.looking_away_tracker.update(True, now)
 
-            if now - self._looking_away_start >= self.looking_away_threshold:
+            if self.looking_away_tracker.is_triggered:
                 self._current_state = FocusState.LOOKING_AWAY
-                alert = self._create_alert(
-                    alert_type="LOOKING_AWAY",
-                    message="Gaze directed away from study screen. Refocus on your material.",
-                    now=now,
-                    severity="info",
-                )
-                if alert:
-                    self.metrics.distraction_count += 1
-                return BehaviorObservation(now, self._current_state, alert, self.metrics)
+                self._was_distracted = True
+                alert = self.alert_policy.create_alert("LOOKING_AWAY", now)
+            else:
+                self._current_state = FocusState.POSSIBLE_DISTRACTION
+
+            metrics = self.accumulator.tick(self._current_state.value, now)
+            return BehaviorObservation(now, self._current_state, confidence, alert, metrics)
 
         elif orientation == "LOOKING_DOWN":
-            self._looking_away_start = None
-            if self._looking_down_start is None:
-                self._looking_down_start = now
+            self.looking_away_tracker.reset()
+            self.looking_down_tracker.update(True, now)
 
-            if now - self._looking_down_start >= self.looking_down_threshold:
+            if self.looking_down_tracker.is_triggered:
                 self._current_state = FocusState.LOOKING_DOWN
-                alert = self._create_alert(
-                    alert_type="LOOKING_DOWN",
-                    message="Head tilted down. Keep your eyes on the study material.",
-                    now=now,
-                    severity="info",
-                )
-                if alert:
-                    self.metrics.distraction_count += 1
-                return BehaviorObservation(now, self._current_state, alert, self.metrics)
+                self._was_distracted = True
+                alert = self.alert_policy.create_alert("LOOKING_DOWN", now)
+            else:
+                self._current_state = FocusState.POSSIBLE_DISTRACTION
 
-        else:
-            # NORMAL_FORWARD
-            self._looking_away_start = None
-            self._looking_down_start = None
+            metrics = self.accumulator.tick(self._current_state.value, now)
+            return BehaviorObservation(now, self._current_state, confidence, alert, metrics)
 
-        # 5. Default State: FOCUSED
+        elif orientation == "POSSIBLE_LOOKING_AWAY":
+            # Natural movement / edge scanning: classified as possible distraction, NO ALERT
+            self.looking_away_tracker.reset()
+            self.looking_down_tracker.reset()
+            self._current_state = FocusState.POSSIBLE_DISTRACTION
+            metrics = self.accumulator.tick(self._current_state.value, now)
+            return BehaviorObservation(now, self._current_state, confidence, None, metrics)
+
+        # Reset look-away trackers when orientation is normal
+        self.looking_away_tracker.reset()
+        self.looking_down_tracker.reset()
+
+        # 5. Recovery State: if user just returned from a confirmed distraction state
+        if self._was_distracted:
+            rec_dur = self.recovery_tracker.update(True, now)
+            if self.recovery_tracker.is_triggered:
+                self._was_distracted = False
+                self.recovery_tracker.reset()
+                self._current_state = FocusState.FOCUSED
+            else:
+                self._current_state = FocusState.RECOVERING
+
+            metrics = self.accumulator.tick(self._current_state.value, now)
+            return BehaviorObservation(now, self._current_state, confidence, None, metrics)
+
+        # 6. Default Normal State: FOCUSED
         self._current_state = FocusState.FOCUSED
-        return BehaviorObservation(now, self._current_state, None, self.metrics)
-
-    def _accumulate_metrics(self, delta: float, state: FocusState) -> None:
-        """Increment observed durations and recalculate true focus score."""
-        self.metrics.total_observed_seconds += delta
-
-        if state == FocusState.FOCUSED:
-            self.metrics.focused_seconds += delta
-        elif state == FocusState.FACE_NOT_DETECTED:
-            self.metrics.away_seconds += delta
-        elif state == FocusState.LOOKING_AWAY:
-            self.metrics.looking_away_seconds += delta
-        elif state == FocusState.LOOKING_DOWN:
-            self.metrics.looking_down_seconds += delta
-        elif state == FocusState.POSSIBLE_DROWSINESS:
-            self.metrics.drowsy_seconds += delta
-        elif state == FocusState.PHONE_DETECTED:
-            self.metrics.phone_seconds += delta
-
-        # Verified mathematical Focus Score: focused time / total observed time
-        if self.metrics.total_observed_seconds > 0:
-            ratio = self.metrics.focused_seconds / self.metrics.total_observed_seconds
-            self.metrics.focus_score = int(round(ratio * 100))
-        else:
-            self.metrics.focus_score = 100
-
-    def _create_alert(
-        self,
-        alert_type: str,
-        message: str,
-        now: float,
-        severity: str = "warning",
-    ) -> Optional[FocusAlert]:
-        """Produce alert only if cooldown has expired for this alert type."""
-        last_time = self._last_alert_time.get(alert_type)
-        if last_time is not None and (now - last_time) < self.alert_cooldown:
-            return None
-
-        self._last_alert_time[alert_type] = now
-        return FocusAlert(
-            id=f"alt_{int(now * 1000)}",
-            type=alert_type,
-            timestamp=now,
-            message=message,
-            severity=severity,
-        )
+        metrics = self.accumulator.tick(self._current_state.value, now)
+        return BehaviorObservation(now, self._current_state, confidence, None, metrics)
 
     def reset(self) -> None:
-        """Reset temporal buffers, cooldowns, and cumulative metrics."""
-        self._face_absent_start = None
-        self._looking_away_start = None
-        self._looking_down_start = None
-        self._phone_start = None
-        self._last_alert_time.clear()
-        self.metrics = SessionMetrics()
-        self._last_tick_time = None
+        """Reset temporal state machines, alerts, and accumulators."""
+        self.face_absent_tracker.reset()
+        self.looking_away_tracker.reset()
+        self.looking_down_tracker.reset()
+        self.phone_tracker.reset()
+        self.recovery_tracker.reset()
+        self.alert_policy.reset()
+        self.accumulator.reset()
         self._current_state = FocusState.UNKNOWN
+        self._was_distracted = False
+
+
+__all__ = [
+    "FocusState",
+    "ConfidenceLevel",
+    "FocusAlert",
+    "SessionMetrics",
+    "SessionObservationAccumulator",
+    "BehaviorObservation",
+    "FocusBehaviorEngine",
+    "TemporalConditionTracker",
+    "AlertPolicy",
+]

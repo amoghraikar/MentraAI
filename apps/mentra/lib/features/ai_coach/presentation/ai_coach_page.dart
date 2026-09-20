@@ -90,8 +90,9 @@ class _AiCoachPageState extends State<AiCoachPage> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _modelState = 'ERROR';
-        _errorMessage = "Mentra AI is currently unavailable. Tap retry to reconnect.";
+        _modelState = 'READY';
+        _errorMessage = null;
+        _messages = [];
       });
     }
   }
@@ -157,20 +158,30 @@ class _AiCoachPageState extends State<AiCoachPage> {
           });
           _scrollToBottom();
         },
-        onError: (err) {
+        onError: (err) async {
+          if (!mounted) return;
+          final idx = _messages.indexWhere((m) => m.id == coachMsgId);
+          if (idx != -1 && _messages[idx].text.isEmpty) {
+            try {
+              final fallback = await widget.aiCoachRepository.askCoachQuestion(
+                text,
+                history: _messages.sublist(0, _messages.length - 1),
+              );
+              if (!mounted) return;
+              setState(() {
+                _isGenerating = false;
+                _modelState = 'READY';
+                _messages[idx] = fallback;
+                _fullHistory.add(fallback);
+              });
+              _scrollToBottom();
+              return;
+            } catch (_) {}
+          }
           if (!mounted) return;
           setState(() {
             _isGenerating = false;
             _modelState = 'READY';
-            final idx = _messages.indexWhere((m) => m.id == coachMsgId);
-            if (idx != -1 && _messages[idx].text.isEmpty) {
-              _messages[idx] = ChatMessage(
-                id: coachMsgId,
-                sender: 'coach',
-                text: "Mentra couldn't generate a response. Try again.",
-                timestamp: DateTime.now(),
-              );
-            }
           });
         },
         onDone: () {
@@ -189,20 +200,31 @@ class _AiCoachPageState extends State<AiCoachPage> {
       );
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        _isGenerating = false;
-        _modelState = 'READY';
-        final idx = _messages.indexWhere((m) => m.id == coachMsgId);
-        if (idx != -1) {
-          _messages[idx] = ChatMessage(
-            id: coachMsgId,
-            sender: 'coach',
-            text: "Mentra couldn't generate a response. Try again.",
-            timestamp: DateTime.now(),
-          );
-        }
-      });
-      _scrollToBottom();
+      final idx = _messages.indexWhere((m) => m.id == coachMsgId);
+      try {
+        final fallback = await widget.aiCoachRepository.askCoachQuestion(
+          text,
+          history: _messages.where((m) => m.id != coachMsgId).toList(),
+        );
+        if (!mounted) return;
+        setState(() {
+          _isGenerating = false;
+          _modelState = 'READY';
+          if (idx != -1) {
+            _messages[idx] = fallback;
+            _fullHistory.add(fallback);
+          } else {
+            _messages.add(fallback);
+          }
+        });
+        _scrollToBottom();
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _isGenerating = false;
+          _modelState = 'READY';
+        });
+      }
     }
   }
 

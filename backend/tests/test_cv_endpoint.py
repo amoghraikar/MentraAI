@@ -25,7 +25,6 @@ def test_cv_status_endpoint(client: TestClient) -> None:
 
 
 def test_cv_process_frame_blank(client: TestClient) -> None:
-    # Create a blank 160x120 synthetic JPEG frame
     blank = np.zeros((120, 160, 3), dtype=np.uint8)
     _, buffer = cv2.imencode(".jpg", blank)
     b64_str = "data:image/jpeg;base64," + base64.b64encode(buffer).decode("utf-8")
@@ -44,7 +43,46 @@ def test_cv_process_frame_blank(client: TestClient) -> None:
     assert data["phone_detected"] is False
     assert "session_metrics" in data
     assert "focus_score" in data["session_metrics"]
+    assert "yaw_deviation" in data
+    assert "camera_quality" in data
     assert data["latency_ms"] >= 0.0
+
+
+def test_cv_calibration_lifecycle(client: TestClient) -> None:
+    # 1. Start calibration
+    resp_start = client.post("/api/v1/cv/calibrate/start")
+    assert resp_start.status_code == 200
+    assert resp_start.json()["status"] == "active"
+
+    # 2. Feed blank frame
+    blank = np.zeros((120, 160, 3), dtype=np.uint8)
+    _, buffer = cv2.imencode(".jpg", blank)
+    b64_str = "data:image/jpeg;base64," + base64.b64encode(buffer).decode("utf-8")
+
+    resp_frame = client.post(
+        "/api/v1/cv/calibrate/frame",
+        json={"image_base64": b64_str, "timestamp": 100.0},
+    )
+    assert resp_frame.status_code == 200
+    frame_data = resp_frame.json()
+    assert frame_data["active"] is True
+    assert "progress" in frame_data
+
+    # 3. Quality evaluation endpoint
+    resp_quality = client.post("/api/v1/cv/quality", json={"image_base64": b64_str})
+    assert resp_quality.status_code == 200
+    quality_data = resp_quality.json()
+    assert quality_data["status"] in ("POOR", "UNAVAILABLE")
+    assert "user_message" in quality_data
+
+    # 4. Pause and Resume endpoints
+    resp_pause = client.post("/api/v1/cv/pause")
+    assert resp_pause.status_code == 200
+    assert "paused" in resp_pause.json()["message"]
+
+    resp_resume = client.post("/api/v1/cv/resume")
+    assert resp_resume.status_code == 200
+    assert "resumed" in resp_resume.json()["message"]
 
 
 def test_cv_reset_endpoint(client: TestClient) -> None:

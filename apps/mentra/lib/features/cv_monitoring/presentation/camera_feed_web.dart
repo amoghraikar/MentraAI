@@ -6,17 +6,72 @@ import 'dart:ui_web' as ui_web;
 import 'package:flutter/material.dart';
 import '../domain/models/monitoring_models.dart';
 
+/// Helper for executing CV backend API calls from web client.
+class CameraFeedWebHelper {
+  static const String baseUrl = 'http://127.0.0.1:8000/api/v1/cv';
+
+  static Future<bool> startCalibration() async {
+    try {
+      final res = await html.HttpRequest.request(
+        '$baseUrl/calibrate/start',
+        method: 'POST',
+      );
+      return res.status == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<CVBaseline?> finishCalibration() async {
+    try {
+      final res = await html.HttpRequest.request(
+        '$baseUrl/calibrate/finish',
+        method: 'POST',
+      );
+      if (res.status == 200 && res.responseText != null) {
+        final data = jsonDecode(res.responseText!) as Map<String, dynamic>;
+        return CVBaseline.fromJson(data);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> pauseMonitoring() async {
+    try {
+      await html.HttpRequest.request('$baseUrl/pause', method: 'POST');
+    } catch (_) {}
+  }
+
+  static Future<void> resumeMonitoring() async {
+    try {
+      await html.HttpRequest.request('$baseUrl/resume', method: 'POST');
+    } catch (_) {}
+  }
+
+  static Future<void> resetSession() async {
+    try {
+      await html.HttpRequest.request('$baseUrl/reset', method: 'POST');
+    } catch (_) {}
+  }
+}
+
 /// Web implementation of live camera feed using HTML5 VideoElement, getUserMedia,
 /// and local MediaPipe + YOLO on-device Computer Vision Engine via backend endpoint.
 Widget buildPlatformCameraView({
   required String viewId,
   required bool isMirrored,
   void Function(RealTimeCvTelemetry telemetry)? onTelemetry,
+  void Function(double progress, String quality, String message)? onCalibrationProgress,
+  bool isCalibrating = false,
 }) {
   return _WebCameraPlayer(
     viewId: viewId,
     isMirrored: isMirrored,
     onTelemetry: onTelemetry,
+    onCalibrationProgress: onCalibrationProgress,
+    isCalibrating: isCalibrating,
   );
 }
 
@@ -25,11 +80,15 @@ class _WebCameraPlayer extends StatefulWidget {
     required this.viewId,
     required this.isMirrored,
     this.onTelemetry,
+    this.onCalibrationProgress,
+    this.isCalibrating = false,
   });
 
   final String viewId;
   final bool isMirrored;
   final void Function(RealTimeCvTelemetry telemetry)? onTelemetry;
+  final void Function(double progress, String quality, String message)? onCalibrationProgress;
+  final bool isCalibrating;
 
   @override
   State<_WebCameraPlayer> createState() => _WebCameraPlayerState();
@@ -46,6 +105,7 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
   late final String _elementId;
 
   static const String _cvEndpoint = 'http://127.0.0.1:8000/api/v1/cv/process-frame';
+  static const String _calibrateFrameEndpoint = 'http://127.0.0.1:8000/api/v1/cv/calibrate/frame';
 
   // Real-time smoothed telemetry state
   double _smoothMinX = 0.25;
@@ -99,6 +159,9 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
             yaw: 0.0,
             pitch: 0.0,
             roll: 0.0,
+            yawDeviation: 0.0,
+            pitchDeviation: 0.0,
+            rollDeviation: 0.0,
             attentionScore: 0.0,
             ear: 0.0,
             leftEar: 0.0,
@@ -107,6 +170,15 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
             phoneConfidence: 0.0,
             orientation: 'UNKNOWN',
             focusState: 'CAMERA_ERROR',
+            confidenceLevel: 'UNKNOWN',
+            cameraQuality: const CameraQualityInfo(
+              status: 'UNAVAILABLE',
+              faceVisible: false,
+              faceSizeRatio: 0.0,
+              brightness: 0.0,
+              landmarkQuality: 0.0,
+              userMessage: 'Webcam permission denied or unavailable.',
+            ),
             fps: 0,
             latencyMs: 0.0,
             statusMessage: 'CAMERA PERMISSION DENIED / UNAVAILABLE',
@@ -121,7 +193,6 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
     _lastClientFrameTime = DateTime.now().millisecondsSinceEpoch;
 
     // Run throttled frame capture loop every 120ms (~8 FPS)
-    // Non-blocking: skips frame if prior frame inference is in progress
     _cvProcessingTimer = Timer.periodic(const Duration(milliseconds: 120), (_) {
       _processLiveCameraFrame();
     });
@@ -152,7 +223,28 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
         _lastClientFrameTime = now;
       }
 
-      // 2. Post frame to local Computer Vision Engine
+      // 2. If actively calibrating, also feed calibration endpoint
+      if (widget.isCalibrating) {
+        final calibPayload = jsonEncode({
+          'image_base64': dataUrl,
+          'timestamp': now / 1000.0,
+        });
+        final calibResponse = await html.HttpRequest.request(
+          _calibrateFrameEndpoint,
+          method: 'POST',
+          sendData: calibPayload,
+          requestHeaders: {'Content-Type': 'application/json'},
+        );
+        if (calibResponse.status == 200 && mounted) {
+          final calibData = jsonDecode(calibResponse.responseText ?? '{}') as Map<String, dynamic>;
+          final progress = (calibData['progress'] as num?)?.toDouble() ?? 0.0;
+          final quality = calibData['quality'] as String? ?? 'GOOD';
+          final message = calibData['message'] as String? ?? '';
+          widget.onCalibrationProgress?.call(progress, quality, message);
+        }
+      }
+
+      // 3. Post frame to local Computer Vision Engine
       final requestPayload = jsonEncode({
         'image_base64': dataUrl,
         'timestamp': now / 1000.0,
@@ -173,16 +265,60 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
         final yaw = (data['yaw'] as num?)?.toDouble() ?? 0.0;
         final pitch = (data['pitch'] as num?)?.toDouble() ?? 0.0;
         final roll = (data['roll'] as num?)?.toDouble() ?? 0.0;
+        final yawDeviation = (data['yaw_deviation'] as num?)?.toDouble() ?? 0.0;
+        final pitchDeviation = (data['pitch_deviation'] as num?)?.toDouble() ?? 0.0;
+        final rollDeviation = (data['roll_deviation'] as num?)?.toDouble() ?? 0.0;
         final orientation = data['orientation'] as String? ?? 'UNKNOWN';
         final ear = (data['ear'] as num?)?.toDouble() ?? 0.0;
         final leftEar = (data['left_ear'] as num?)?.toDouble() ?? 0.0;
         final rightEar = (data['right_ear'] as num?)?.toDouble() ?? 0.0;
-        final isDrowsy = data['is_drowsy'] as bool? ?? false;
         final phoneDetected = data['phone_detected'] as bool? ?? false;
         final phoneConfidence = (data['phone_confidence'] as num?)?.toDouble() ?? 0.0;
+        final phoneAvailable = data['phone_available'] as bool? ?? false;
         final focusState = data['focus_state'] as String? ?? 'UNKNOWN';
+        final confidenceLevel = data['confidence_level'] as String? ?? 'UNKNOWN';
         final engineFps = (data['fps'] as num?)?.toInt() ?? _clientFps;
         final latencyMs = (DateTime.now().millisecondsSinceEpoch - startTime).toDouble();
+        final baselineActive = data['baseline_active'] as bool? ?? false;
+
+        // Camera Quality
+        CameraQualityInfo qualityInfo;
+        if (data['camera_quality'] != null) {
+          qualityInfo = CameraQualityInfo.fromJson(data['camera_quality'] as Map<String, dynamic>);
+        } else {
+          qualityInfo = const CameraQualityInfo(
+            status: 'GOOD',
+            faceVisible: true,
+            faceSizeRatio: 0.1,
+            brightness: 120.0,
+            landmarkQuality: 1.0,
+            userMessage: 'Optimal camera conditions.',
+          );
+        }
+
+        // Parse Session Metrics
+        double focusedDur = 0.0;
+        double lookingAwayDur = 0.0;
+        double eyesClosedDur = 0.0;
+        double drowsyDur = 0.0;
+        double phoneDur = 0.0;
+        double faceNotDetDur = 0.0;
+        double unknownDur = 0.0;
+        int distCount = 0;
+        int? focusScore;
+
+        if (data['session_metrics'] != null) {
+          final m = data['session_metrics'] as Map<String, dynamic>;
+          focusedDur = (m['focused_duration'] as num?)?.toDouble() ?? 0.0;
+          lookingAwayDur = (m['looking_away_duration'] as num?)?.toDouble() ?? 0.0;
+          eyesClosedDur = (m['eyes_closed_duration'] as num?)?.toDouble() ?? 0.0;
+          drowsyDur = (m['possible_drowsiness_duration'] as num?)?.toDouble() ?? 0.0;
+          phoneDur = (m['phone_detected_duration'] as num?)?.toDouble() ?? 0.0;
+          faceNotDetDur = (m['face_not_detected_duration'] as num?)?.toDouble() ?? 0.0;
+          unknownDur = (m['unknown_duration'] as num?)?.toDouble() ?? 0.0;
+          distCount = (m['number_of_distraction_events'] as num?)?.toInt() ?? 0;
+          focusScore = m['focus_score'] as int?;
+        }
 
         // Parse Real Face Bounding Box
         double targetMinX = 0.25;
@@ -200,7 +336,6 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
           targetMaxY = (targetMinY + h).clamp(targetMinY + 0.05, 0.98);
         }
 
-        // Adjust for mirrored video display alignment
         if (widget.isMirrored) {
           final tempMin = 1.0 - targetMaxX;
           final tempMax = 1.0 - targetMinX;
@@ -233,19 +368,20 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
         String statusMsg;
         if (phoneDetected) {
           statusMsg = 'PHONE DETECTED (${(phoneConfidence * 100).toInt()}%)';
-        } else if (isDrowsy) {
-          statusMsg = 'DROWSINESS (EYES CLOSED - EAR ${ear.toStringAsFixed(2)})';
-        } else if (orientation == 'LOOKING_DOWN') {
-          statusMsg = 'LOOKING DOWN (PITCH +${pitch.toInt()}°)';
-        } else if (orientation == 'LOOKING_AWAY') {
-          statusMsg = 'LOOKING AWAY (YAW ${yaw > 0 ? '+' : ''}${yaw.toInt()}°)';
+        } else if (focusState == 'POSSIBLE_DROWSINESS') {
+          statusMsg = 'POSSIBLE DROWSINESS (EAR ${ear.toStringAsFixed(2)})';
+        } else if (focusState == 'LOOKING_DOWN') {
+          statusMsg = 'LOOKING DOWN (PITCH DEV ${pitchDeviation > 0 ? '+' : ''}${pitchDeviation.toInt()}°)';
+        } else if (focusState == 'LOOKING_AWAY') {
+          statusMsg = 'LOOKING AWAY (YAW DEV ${yawDeviation > 0 ? '+' : ''}${yawDeviation.toInt()}°)';
+        } else if (focusState == 'RECOVERING') {
+          statusMsg = 'RECOVERING ATTENTION...';
         } else if (isFaceDetected) {
           statusMsg = 'FOCUSED ON MATERIAL';
         } else {
-          statusMsg = 'AWAY FROM STUDY VIEW';
+          statusMsg = 'FACE NOT DETECTED';
         }
 
-        final phoneAvailable = data['phone_available'] as bool? ?? false;
         final attentionScore = focusState == 'FOCUSED' ? 0.95 : (isFaceDetected ? 0.35 : 0.0);
 
         final telemetry = RealTimeCvTelemetry(
@@ -256,6 +392,9 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
           yaw: yaw,
           pitch: pitch,
           roll: roll,
+          yawDeviation: yawDeviation,
+          pitchDeviation: pitchDeviation,
+          rollDeviation: rollDeviation,
           attentionScore: attentionScore,
           ear: ear,
           leftEar: leftEar,
@@ -265,36 +404,24 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
           phoneAvailable: phoneAvailable,
           orientation: orientation,
           focusState: focusState,
+          confidenceLevel: confidenceLevel,
+          cameraQuality: qualityInfo,
           fps: engineFps > 0 ? engineFps : _clientFps,
           latencyMs: latencyMs,
           statusMessage: statusMsg,
+          baselineActive: baselineActive,
+          focusedDuration: focusedDur,
+          lookingAwayDuration: lookingAwayDur,
+          eyesClosedDuration: eyesClosedDur,
+          possibleDrowsinessDuration: drowsyDur,
+          phoneDetectedDuration: phoneDur,
+          faceNotDetectedDuration: faceNotDetDur,
+          unknownDuration: unknownDur,
+          distractionCount: distCount,
+          focusScore: focusScore,
         );
 
         widget.onTelemetry?.call(telemetry);
-      } else if (mounted) {
-        widget.onTelemetry?.call(
-          RealTimeCvTelemetry(
-            isFaceDetected: false,
-            confidence: 0.0,
-            box: const Rect.fromLTWH(0.25, 0.20, 0.50, 0.55),
-            landmarks: const [],
-            yaw: 0.0,
-            pitch: 0.0,
-            roll: 0.0,
-            attentionScore: 0.0,
-            ear: 0.0,
-            leftEar: 0.0,
-            rightEar: 0.0,
-            phoneDetected: false,
-            phoneConfidence: 0.0,
-            phoneAvailable: false,
-            orientation: 'UNKNOWN',
-            focusState: 'CV_UNAVAILABLE',
-            fps: 0,
-            latencyMs: 0.0,
-            statusMessage: 'CV ENGINE UNAVAILABLE (${response.status})',
-          ),
-        );
       }
     } catch (_) {
       // Non-fatal frame transmission failure

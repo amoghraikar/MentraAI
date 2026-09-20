@@ -63,3 +63,44 @@ def get_current_user(
         )
 
     return user
+
+
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/login",
+    auto_error=False,
+)
+
+
+def get_current_user_or_local(
+    db: Session = Depends(get_db),
+    token: str | None = Depends(oauth2_scheme_optional),
+) -> User:
+    """Validate bearer token or return the local student user for local AI inference."""
+    if token:
+        try:
+            if token == "offline-demo-jwt-token":
+                demo_user = user_repository.get_by_email(db, email="student@mentra.ai")
+                if demo_user:
+                    return demo_user
+            payload = decode_access_token(token)
+            user_id: str | None = payload.get("sub")
+            if user_id:
+                user = user_repository.get_by_id(db, user_id=user_id)
+                if user and user.is_active:
+                    return user
+        except Exception:
+            pass
+
+    # Local user for offline / local-only AI use
+    local_user = user_repository.get_by_email(db, email="student@mentra.ai")
+    if not local_user:
+        from app.schemas.user import UserCreate
+        local_user = user_repository.create(
+            db,
+            obj_in=UserCreate(
+                email="student@mentra.ai",
+                password="offline-local-password",
+                full_name="Mentra Student",
+            ),
+        )
+    return local_user

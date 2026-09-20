@@ -2,7 +2,7 @@ from typing import List
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from app.core.dependencies import get_current_user, get_db
+from app.core.dependencies import get_current_user, get_current_user_or_local, get_db
 from app.models.user import User
 from app.schemas.ai_coach import (
     AiCoachChatRequest,
@@ -46,7 +46,7 @@ async def cancel_ai_generation() -> dict:
 @router.post("/stream")
 async def stream_coach_answer(
     request: AiCoachChatRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_local),
     db: Session = Depends(get_db),
 ):
     return StreamingResponse(
@@ -138,7 +138,7 @@ def list_study_materials(
 @router.post("/chat", response_model=AiCoachChatResponse, status_code=status.HTTP_200_OK)
 async def ask_coach(
     request: AiCoachChatRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_local),
     db: Session = Depends(get_db),
 ) -> AiCoachChatResponse:
     return await ai_coach_service.chat(db=db, user_id=current_user.id, request=request)
@@ -146,7 +146,7 @@ async def ask_coach(
 
 @router.get("/chat", response_model=List[AiCoachChatResponse], status_code=status.HTTP_200_OK)
 def get_chat_history(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_local),
     db: Session = Depends(get_db),
 ) -> List[AiCoachChatResponse]:
     return ai_coach_service.get_chat_history(db=db, user_id=current_user.id)
@@ -154,7 +154,7 @@ def get_chat_history(
 
 @router.delete("/chat", status_code=status.HTTP_200_OK)
 def clear_chat_history(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_local),
     db: Session = Depends(get_db),
 ) -> dict:
     ai_coach_service.clear_chat_history(db=db, user_id=current_user.id)

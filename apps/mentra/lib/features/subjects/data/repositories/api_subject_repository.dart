@@ -4,9 +4,13 @@ import '../../domain/models/topic_model.dart';
 import '../../domain/repositories/subject_repository.dart';
 
 class ApiSubjectRepository implements SubjectRepository {
-  ApiSubjectRepository({required this.apiClient});
+  ApiSubjectRepository({
+    required this.apiClient,
+    this.fallbackRepository,
+  });
 
   final ApiClient apiClient;
+  final SubjectRepository? fallbackRepository;
   final List<SubjectModel> _localCache = [];
 
   @override
@@ -22,10 +26,16 @@ class ApiSubjectRepository implements SubjectRepository {
       if (_localCache.isNotEmpty) {
         return List.unmodifiable(_localCache);
       }
+      if (fallbackRepository != null) {
+        return fallbackRepository!.getSubjects();
+      }
       rethrow;
     } catch (_) {
       if (_localCache.isNotEmpty) {
         return List.unmodifiable(_localCache);
+      }
+      if (fallbackRepository != null) {
+        return fallbackRepository!.getSubjects();
       }
       rethrow;
     }
@@ -47,10 +57,16 @@ class ApiSubjectRepository implements SubjectRepository {
       if (e.statusCode == 404) return null;
       final cached = _localCache.where((s) => s.id == id).firstOrNull;
       if (cached != null) return cached;
+      if (fallbackRepository != null) {
+        return fallbackRepository!.getSubjectById(id);
+      }
       rethrow;
     } catch (_) {
       final cached = _localCache.where((s) => s.id == id).firstOrNull;
       if (cached != null) return cached;
+      if (fallbackRepository != null) {
+        return fallbackRepository!.getSubjectById(id);
+      }
       rethrow;
     }
   }

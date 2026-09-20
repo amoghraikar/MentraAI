@@ -3,9 +3,13 @@ import '../../domain/models/study_session_record.dart';
 import '../../domain/repositories/session_repository.dart';
 
 class ApiSessionRepository implements SessionRepository {
-  ApiSessionRepository({required this.apiClient});
+  ApiSessionRepository({
+    required this.apiClient,
+    this.fallbackRepository,
+  });
 
   final ApiClient apiClient;
+  final SessionRepository? fallbackRepository;
   String? _cachedDefaultSubjectId;
 
   Future<String> _getDefaultSubjectId() async {
@@ -42,77 +46,98 @@ class ApiSessionRepository implements SessionRepository {
 
   @override
   Future<List<StudySessionRecord>> getRecentSessions({int limit = 10}) async {
-    final response = await apiClient.get(
-      '/api/v1/sessions',
-      queryParams: {'limit': limit.toString()},
-    );
-    final list = response as List<dynamic>;
-    return list.map((json) => _sessionFromJson(json as Map<String, dynamic>)).toList();
+    try {
+      final response = await apiClient.get(
+        '/api/v1/sessions',
+        queryParams: {'limit': limit.toString()},
+      );
+      final list = response as List<dynamic>;
+      return list.map((json) => _sessionFromJson(json as Map<String, dynamic>)).toList();
+    } catch (_) {
+      if (fallbackRepository != null) {
+        return fallbackRepository!.getRecentSessions(limit: limit);
+      }
+      rethrow;
+    }
   }
 
   @override
   Future<StudySessionRecord> saveSession(StudySessionRecord session) async {
-    final effectiveSubjectId = (session.subjectId != null && session.subjectId!.isNotEmpty && session.subjectId != 'default')
-        ? session.subjectId!
-        : await _getDefaultSubjectId();
-    final now = session.completedAt.toUtc();
-    final started = now.subtract(Duration(minutes: session.durationMinutes));
+    try {
+      final effectiveSubjectId = (session.subjectId != null && session.subjectId!.isNotEmpty && session.subjectId != 'default')
+          ? session.subjectId!
+          : await _getDefaultSubjectId();
+      final now = session.completedAt.toUtc();
+      final started = now.subtract(Duration(minutes: session.durationMinutes));
 
-    final response = await apiClient.post(
-      '/api/v1/sessions',
-      body: {
-        'subject_id': effectiveSubjectId,
-        if (session.topicId != null && session.topicId!.isNotEmpty && session.topicId != 'gen_top')
-          'topic_id': session.topicId,
-        'target_duration_minutes': session.durationMinutes > 0 ? session.durationMinutes : 45,
-        'actual_duration_minutes': session.durationMinutes,
-        'study_mode': 'Focus Mode',
-        'is_focus_monitoring_enabled': true,
-        'focus_score': session.focusScore,
-        'distractions_count': session.distractionsCount,
-        'reflection': session.reflection.name,
-        'started_at': started.toIso8601String(),
-        'ended_at': now.toIso8601String(),
-      },
-    );
+      final response = await apiClient.post(
+        '/api/v1/sessions',
+        body: {
+          'subject_id': effectiveSubjectId,
+          if (session.topicId != null && session.topicId!.isNotEmpty && session.topicId != 'gen_top')
+            'topic_id': session.topicId,
+          'target_duration_minutes': session.durationMinutes > 0 ? session.durationMinutes : 45,
+          'actual_duration_minutes': session.durationMinutes,
+          'study_mode': 'Focus Mode',
+          'is_focus_monitoring_enabled': true,
+          'focus_score': session.focusScore,
+          'distractions_count': session.distractionsCount,
+          'reflection': session.reflection.name,
+          'started_at': started.toIso8601String(),
+          'ended_at': now.toIso8601String(),
+        },
+      );
 
-    final saved = _sessionFromJson(response as Map<String, dynamic>);
-    return StudySessionRecord(
-      id: saved.id,
-      subjectId: effectiveSubjectId,
-      topicId: session.topicId,
-      subjectTitle: session.subjectTitle,
-      topicTitle: session.topicTitle,
-      durationMinutes: saved.durationMinutes,
-      focusScore: saved.focusScore,
-      distractionsCount: saved.distractionsCount,
-      completedAt: saved.completedAt,
-      reflection: saved.reflection,
-    );
+      final saved = _sessionFromJson(response as Map<String, dynamic>);
+      return StudySessionRecord(
+        id: saved.id,
+        subjectId: effectiveSubjectId,
+        topicId: session.topicId,
+        subjectTitle: session.subjectTitle,
+        topicTitle: session.topicTitle,
+        durationMinutes: saved.durationMinutes,
+        focusScore: saved.focusScore,
+        distractionsCount: saved.distractionsCount,
+        completedAt: saved.completedAt,
+        reflection: saved.reflection,
+      );
+    } catch (_) {
+      if (fallbackRepository != null) {
+        return fallbackRepository!.saveSession(session);
+      }
+      rethrow;
+    }
   }
 
   @override
   Future<Map<String, dynamic>> getSessionStatistics() async {
-    final sessions = await getRecentSessions(limit: 50);
-    if (sessions.isEmpty) {
+    try {
+      final sessions = await getRecentSessions(limit: 50);
+      if (sessions.isEmpty) {
+        return {
+          'totalMinutes': 0,
+          'averageFocusScore': 0,
+          'totalDistractions': 0,
+          'completedSessionsCount': 0,
+        };
+      }
+
+      final totalMinutes = sessions.fold<int>(0, (sum, s) => sum + s.durationMinutes);
+      final totalDistractions = sessions.fold<int>(0, (sum, s) => sum + s.distractionsCount);
+      final avgFocus = (sessions.fold<int>(0, (sum, s) => sum + s.focusScore) / sessions.length).round();
+
       return {
-        'totalMinutes': 0,
-        'averageFocusScore': 0,
-        'totalDistractions': 0,
-        'completedSessionsCount': 0,
+        'totalMinutes': totalMinutes,
+        'averageFocusScore': avgFocus,
+        'totalDistractions': totalDistractions,
+        'completedSessionsCount': sessions.length,
       };
+    } catch (_) {
+      if (fallbackRepository != null) {
+        return fallbackRepository!.getSessionStatistics();
+      }
+      rethrow;
     }
-
-    final totalMinutes = sessions.fold<int>(0, (sum, s) => sum + s.durationMinutes);
-    final totalDistractions = sessions.fold<int>(0, (sum, s) => sum + s.distractionsCount);
-    final avgFocus = (sessions.fold<int>(0, (sum, s) => sum + s.focusScore) / sessions.length).round();
-
-    return {
-      'totalMinutes': totalMinutes,
-      'averageFocusScore': avgFocus,
-      'totalDistractions': totalDistractions,
-      'completedSessionsCount': sessions.length,
-    };
   }
 
   StudySessionRecord _sessionFromJson(Map<String, dynamic> json) {

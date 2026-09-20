@@ -59,33 +59,10 @@ class MockAiCoachRepository implements AiCoachRepository {
     String? customEndpointUrl,
     String? attachedMaterialText,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    final q = question.toLowerCase();
-
-    String reply;
-    if (q.contains('how is my progress') || q.contains('progress') || q.contains('my stats') || q.contains('performance')) {
-      reply = "### Telemetry & Progress Assessment\n\n• **Focus Health:** Your current baseline is **88/100** with strong cognitive endurance.\n• **Peak Interval:** Your retention peaks during 45-minute morning sessions.\n• **Active Recall:** Testing concepts immediately after sessions has boosted retention by **+18%**.\n\n**Recommendation:** Complete a 45-minute session today to maintain your weekly consistency streak.";
-    } else if (q.contains('data analytic') || q.contains('regression') || q.contains('ols') || q.contains('statistic')) {
-      reply = "### Master Guide: Data Analytics & Regression\n\n**1. Core Principles:** Data Analytics systematically extracts actionable intelligence from raw data using descriptive statistics, exploratory analysis (EDA), and predictive modeling.\n\n**2. Key Workflow:**\n• **Data Preprocessing:** Handle null values, outliers, and feature scaling.\n• **Ordinary Least Squares (OLS):** Minimize sum of squared residuals to find optimal parameters (beta_0, beta_1).\n• **Model Evaluation:** Check R-squared, adjusted R-squared, p-values, and ANOVA F-tests.\n\n**3. Actionable Drill:** Launch a 45-minute study block to solve 3 regression hypothesis test problems without looking at formula sheets.";
-    } else if (q.contains('machine learning') || q.contains('neural network') || q.contains('gradient descent') || q.contains('deep learning')) {
-      reply = "### Master Guide: Machine Learning & Optimization\n\n**1. Foundational Concept:** ML algorithms learn parameter weights theta iteratively by minimizing a loss function J(theta) via Gradient Descent.\n\n**2. Key Mechanisms:**\n• **Forward Pass & Loss Computation:** Evaluate model predictions against ground-truth labels.\n• **Backpropagation:** Compute partial derivatives via calculus chain rule.\n• **Regularization:** Apply L1/L2 penalties or dropout to prevent overfitting on training data.\n\n**3. Actionable Drill:** Dedicate 30 minutes to deriving the weight update rule and test recall using active questions.";
-    } else if (q.contains('schedule') || q.contains('plan') || q.contains('time') || q.contains('routine')) {
-      reply = "### Optimal Cognitive Study Architecture\n\nBased on your attention curves:\n1. **Peak Cognitive Window (45-50 Mins):** Tackle your highest-complexity subject first.\n2. **Active Neural Reset (10 Mins):** Hydrate, stretch, and step away from screens for neural consolidation.\n3. **Active Practice (35 Mins):** Solve practice problems from memory.\n\n**Action:** Start your first 45-minute focus session now.";
-    } else if (q.contains('focus') || q.contains('distraction') || q.contains('phone') || q.contains('drows')) {
-      reply = "### High-Focus Environmental Architecture\n\n1. **Friction Boundary:** Place your phone in another room; this yields an immediate +22% increase in continuous deep focus.\n2. **Visual Reset:** Use the 20-20-20 rule to relieve eye strain and take 5 deep diaphragmatic breaths.\n3. **Single-Task Lock:** Commit to 25 minutes of unbroken focus before switching contexts.";
-    } else if (q.contains('exam') || q.contains('revision') || q.contains('test') || q.contains('recall')) {
-      reply = "### High-Impact Exam Mastery Strategy\n\n1. **Feynman Blurting:** Write down everything you know on a blank page from memory, then identify specific knowledge gaps.\n2. **Interleaved Drills:** Alternate between different topic problem sets to build cognitive retrieval speed.\n3. **Spaced Repetition:** Review difficult concepts after 24 hours, 3 days, and 7 days for permanent memory consolidation.";
-    } else {
-      // Dynamic topic extractor for any general query
-      final cleanTopic = question.replaceAll(RegExp(r'^(teach me|explain|what is|how does|tell me about)\s+', caseSensitive: false), '').trim();
-      final topicName = cleanTopic.isNotEmpty ? cleanTopic : "Core Concept";
-      reply = "### Master Guide: $topicName\n\n**1. First-Principles Foundation:**\n$topicName represents a fundamental principle in structured analytical problem-solving. It transforms complex raw mechanics into rigorous, predictable outcomes.\n\n**2. Essential Implementation Steps:**\n• Deconstruct the concept into core variables and boundary rules.\n• Map relationships through step-by-step causal modeling.\n• Test edge cases to verify resilience and real-world behavior.\n\n**3. Action Recommendation:**\nStart a 45-minute Mentra focus session. Spend 20 minutes mapping the core definitions and 25 minutes solving practice application drills.";
-    }
-
     return ChatMessage(
       id: 'msg_${Random().nextInt(999999)}',
       sender: 'coach',
-      text: reply,
+      text: "Mentra's local model isn't available right now. Please ensure the local AI service is running on your machine.",
       timestamp: DateTime.now(),
     );
   }
@@ -215,10 +192,10 @@ class MockAiCoachRepository implements AiCoachRepository {
   @override
   Future<Map<String, dynamic>> getModelStatus() async {
     return {
-      'state': 'READY',
-      'model': 'qwen2.5:0.5b',
-      'status_message': 'Mentra AI ready',
-      'is_ready': true,
+      'state': 'OFFLINE',
+      'model': 'local-llm',
+      'status_message': "Mentra's local model isn't available right now.",
+      'is_ready': false,
     };
   }
 

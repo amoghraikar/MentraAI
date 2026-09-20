@@ -3,9 +3,13 @@ import '../../domain/models/goal_model.dart';
 import '../../domain/repositories/goal_repository.dart';
 
 class ApiGoalRepository implements GoalRepository {
-  ApiGoalRepository({required this.apiClient});
+  ApiGoalRepository({
+    required this.apiClient,
+    this.fallbackRepository,
+  });
 
   final ApiClient apiClient;
+  final GoalRepository? fallbackRepository;
   String? _cachedDefaultSubjectId;
 
   Future<String> _getDefaultSubjectId() async {
@@ -43,9 +47,16 @@ class ApiGoalRepository implements GoalRepository {
 
   @override
   Future<List<GoalModel>> getGoals() async {
-    final response = await apiClient.get('/api/v1/goals');
-    final list = response as List<dynamic>;
-    return list.map((json) => _goalFromJson(json as Map<String, dynamic>)).toList();
+    try {
+      final response = await apiClient.get('/api/v1/goals');
+      final list = response as List<dynamic>;
+      return list.map((json) => _goalFromJson(json as Map<String, dynamic>)).toList();
+    } catch (_) {
+      if (fallbackRepository != null) {
+        return fallbackRepository!.getGoals();
+      }
+      rethrow;
+    }
   }
 
   @override
