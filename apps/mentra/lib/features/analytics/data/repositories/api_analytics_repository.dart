@@ -1,7 +1,6 @@
 import '../../../../core/network/api_client.dart';
 import '../../domain/models/analytics_data.dart';
 import '../../domain/repositories/analytics_repository.dart';
-import 'mock_analytics_repository.dart';
 
 class ApiAnalyticsRepository implements AnalyticsRepository {
   ApiAnalyticsRepository({

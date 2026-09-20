@@ -1,7 +1,6 @@
 import '../../../../core/network/api_client.dart';
 import '../../domain/models/note_model.dart';
 import '../../domain/repositories/note_repository.dart';
-import 'mock_note_repository.dart';
 
 class ApiNoteRepository implements NoteRepository {
   ApiNoteRepository({
