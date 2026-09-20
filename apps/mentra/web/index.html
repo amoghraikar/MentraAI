@@ -34,14 +34,17 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
+  <!-- Flutter Initialization -->
+  <script>
+    try {
+      if (window.localStorage) {
+        var token = window.localStorage.getItem('mentra_auth_token');
+        if (token === 'offline-demo-jwt-token' || token === 'expired_test_token') {
+          window.localStorage.removeItem('mentra_auth_token');
+        }
+      }
+    } catch (e) {}
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

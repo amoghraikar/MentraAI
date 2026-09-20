@@ -127,13 +127,7 @@ class AuthService {
 
   Future<UserModel?> getCurrentUser(String token) async {
     if (token == 'offline-demo-jwt-token') {
-      return UserModel(
-        id: 'demo-local-student',
-        email: 'student@mentra.ai',
-        fullName: _cachedLocalName ?? 'Mentra Student',
-        isActive: true,
-        createdAt: DateTime.now(),
-      );
+      return null;
     }
     try {
       final response = await _apiClient.get(
@@ -144,18 +138,8 @@ class AuthService {
     } on ApiException catch (e) {
       if (e.statusCode == 401) {
         await _tokenStorage.clearToken();
-        return null;
       }
-      if (e.statusCode == 503) {
-        return UserModel(
-          id: 'demo-local-student',
-          email: 'student@mentra.ai',
-          fullName: 'Mentra Student',
-          isActive: true,
-          createdAt: DateTime.now(),
-        );
-      }
-      rethrow;
+      return null;
     } catch (_) {
       return null;
     }
