@@ -31,8 +31,8 @@ class FaceDetector:
 
     def __init__(
         self,
-        min_detection_confidence: float = 0.5,
-        min_tracking_confidence: float = 0.5,
+        min_detection_confidence: float = 0.35,
+        min_tracking_confidence: float = 0.35,
     ) -> None:
         self.mp_face_mesh = mp.solutions.face_mesh
         self.detector = self.mp_face_mesh.FaceMesh(
@@ -53,6 +53,23 @@ class FaceDetector:
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         rgb_frame.flags.writeable = False
         results = self.detector.process(rgb_frame)
+
+        if not results.multi_face_landmarks:
+            # Under low lighting or high-contrast backlighting, attempt CLAHE luminance equalization
+            try:
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                mean_b = float(cv2.mean(gray)[0])
+                if mean_b < 65.0 or mean_b > 190.0:
+                    lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+                    l, a, b = cv2.split(lab)
+                    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+                    cl = clahe.apply(l)
+                    enhanced_bgr = cv2.cvtColor(cv2.merge((cl, a, b)), cv2.COLOR_LAB2BGR)
+                    rgb_enhanced = cv2.cvtColor(enhanced_bgr, cv2.COLOR_BGR2RGB)
+                    rgb_enhanced.flags.writeable = False
+                    results = self.detector.process(rgb_enhanced)
+            except Exception:
+                pass
 
         if not results.multi_face_landmarks:
             return FaceResult(present=False, confidence=0.0)

@@ -8,7 +8,15 @@ import '../domain/models/monitoring_models.dart';
 
 /// Helper for executing CV backend API calls from web client.
 class CameraFeedWebHelper {
-  static const String baseUrl = 'http://127.0.0.1:8000/api/v1/cv';
+  static String get baseUrl {
+    try {
+      final host = html.window.location.hostname;
+      if (host != null && host.isNotEmpty) {
+        return 'http://$host:8000/api/v1/cv';
+      }
+    } catch (_) {}
+    return 'http://127.0.0.1:8000/api/v1/cv';
+  }
 
   static Future<bool> startCalibration() async {
     try {
@@ -102,10 +110,11 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
 
   bool _isRegistered = false;
   bool _isProcessingFrame = false;
+  int _consecutiveErrors = 0;
   late final String _elementId;
 
-  static const String _cvEndpoint = 'http://127.0.0.1:8000/api/v1/cv/process-frame';
-  static const String _calibrateFrameEndpoint = 'http://127.0.0.1:8000/api/v1/cv/calibrate/frame';
+  static String get _cvEndpoint => '${CameraFeedWebHelper.baseUrl}/process-frame';
+  static String get _calibrateFrameEndpoint => '${CameraFeedWebHelper.baseUrl}/calibrate/frame';
 
   // Real-time smoothed telemetry state
   double _smoothMinX = 0.25;
@@ -421,10 +430,47 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
           focusScore: focusScore,
         );
 
+        _consecutiveErrors = 0;
         widget.onTelemetry?.call(telemetry);
       }
     } catch (_) {
-      // Non-fatal frame transmission failure
+      _consecutiveErrors++;
+      if (_consecutiveErrors >= 3 && mounted) {
+        widget.onTelemetry?.call(
+          RealTimeCvTelemetry(
+            isFaceDetected: false,
+            confidence: 0.0,
+            box: const Rect.fromLTWH(0.25, 0.20, 0.50, 0.55),
+            landmarks: const [],
+            yaw: 0.0,
+            pitch: 0.0,
+            roll: 0.0,
+            yawDeviation: 0.0,
+            pitchDeviation: 0.0,
+            rollDeviation: 0.0,
+            attentionScore: 0.0,
+            ear: 0.0,
+            leftEar: 0.0,
+            rightEar: 0.0,
+            phoneDetected: false,
+            phoneConfidence: 0.0,
+            orientation: 'UNKNOWN',
+            focusState: 'BACKEND_OFFLINE',
+            confidenceLevel: 'UNKNOWN',
+            cameraQuality: const CameraQualityInfo(
+              status: 'UNAVAILABLE',
+              faceVisible: false,
+              faceSizeRatio: 0.0,
+              brightness: 0.0,
+              landmarkQuality: 0.0,
+              userMessage: 'CV backend service unreachable on port 8000. Start via ./start.sh.',
+            ),
+            fps: 0,
+            latencyMs: 0.0,
+            statusMessage: 'CV BACKEND OFFLINE (PORT 8000)',
+          ),
+        );
+      }
     } finally {
       _isProcessingFrame = false;
     }
