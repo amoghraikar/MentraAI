@@ -4,16 +4,17 @@ Implements the single local AI engine abstraction connecting Mentra directly to
 a local open-weight instruction-tuned model running locally without cloud APIs.
 """
 
+import asyncio
 from enum import Enum
 import json
 import logging
-import os
 from typing import Any, AsyncGenerator, Dict, List, Optional
 import httpx
 
-logger = logging.getLogger(__name__)
-
+from app.core.config import settings
 from app.services.ai.prompts import MENTRA_SYSTEM_PROMPT
+
+logger = logging.getLogger(__name__)
 
 
 class ModelState(str, Enum):
@@ -57,12 +58,15 @@ class LocalLLM:
         base_url: Optional[str] = None,
         model: Optional[str] = None,
     ):
-        self.base_url = (base_url or os.getenv("LOCAL_LLM_URL", "http://127.0.0.1:11434")).rstrip("/")
-        self.model = model or os.getenv("LOCAL_LLM_MODEL", "qwen2.5:1.5b")
+        self.base_url = (base_url or settings.LOCAL_LLM_URL).rstrip("/")
+        self.model = model or settings.LOCAL_LLM_MODEL
+        self.keep_alive = settings.LOCAL_LLM_KEEP_ALIVE
+        self.timeout_seconds = settings.LOCAL_LLM_TIMEOUT_SECONDS
         self._state: ModelState = ModelState.UNINITIALIZED
         self._last_error: Optional[str] = None
         self._active_client: Optional[httpx.AsyncClient] = None
         self._cancel_requested: bool = False
+        self._warmed_up: bool = False
 
     @property
     def state(self) -> ModelState:
@@ -166,6 +170,48 @@ class LocalLLM:
                 f"Could not connect to local LLM runtime at {self.base_url}: {e}",
             )
 
+    async def warmup(self) -> bool:
+        """Load the model into memory so the first real request is not a cold start.
+
+        Combined with ``keep_alive`` this is what makes the AI coach answer on
+        the first try every time the app is opened. Returns True on success;
+        never raises, because warm-up is best-effort.
+        """
+        if self._warmed_up and self.is_ready():
+            return True
+        try:
+            if not self.is_ready():
+                await self.initialize()
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                res = await client.post(
+                    f"{self.base_url}/api/generate",
+                    json={
+                        "model": self.model,
+                        "prompt": "ok",
+                        "stream": False,
+                        "keep_alive": self.keep_alive,
+                        "options": {"num_predict": 1},
+                    },
+                )
+                if res.status_code != 200:
+                    logger.warning(
+                        "LocalLLM warm-up returned HTTP %s: %s",
+                        res.status_code,
+                        res.text[:200],
+                    )
+                    return False
+            self._warmed_up = True
+            self._state = ModelState.READY
+            logger.info(
+                "Mentra LocalLLM warmed up with model '%s' (keep_alive=%s).",
+                self.model,
+                self.keep_alive,
+            )
+            return True
+        except Exception as e:
+            logger.warning("LocalLLM warm-up skipped: %s", e)
+            return False
+
     async def generate(
         self,
         messages: List[Dict[str, str]],
@@ -174,14 +220,27 @@ class LocalLLM:
         max_tokens: int = 1500,
     ) -> str:
         """Generate a complete text response from the local model."""
-        if self._state == ModelState.GENERATING:
-            raise LocalLLMError(LocalLLMErrorCode.MODEL_BUSY, "Model is currently generating another response")
-
         if not messages:
             raise LocalLLMError(LocalLLMErrorCode.INVALID_INPUT, "Messages list cannot be empty")
 
+        # Auto-recover from stale GENERATING state (e.g. after a crash / cancelled stream)
+        if self._state == ModelState.GENERATING:
+            logger.warning("LocalLLM: stale GENERATING state detected — auto-recovering to READY")
+            self._active_client = None
+            self._state = ModelState.READY
+
+        # If in ERROR state, re-attempt initialization before giving up
+        if self._state in (ModelState.ERROR, ModelState.UNINITIALIZED):
+            try:
+                await self.initialize()
+            except Exception:
+                pass  # initialize() already logs the error
+
         if not self.is_ready():
-            await self.initialize()
+            raise LocalLLMError(
+                LocalLLMErrorCode.MODEL_LOAD_FAILED,
+                "Local LLM is not ready. Ensure Ollama is running with a downloaded model.",
+            )
 
         self._state = ModelState.GENERATING
         self._cancel_requested = False
@@ -198,49 +257,82 @@ class LocalLLM:
             "model": self.model,
             "messages": chat_payload,
             "stream": False,
+            "keep_alive": self.keep_alive,
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
             },
         }
 
+        last_exc: Optional[Exception] = None
         try:
-            async with httpx.AsyncClient(timeout=90.0) as client:
-                self._active_client = client
-                res = await client.post(f"{self.base_url}/api/chat", json=payload)
-                if res.status_code != 200:
-                    raise LocalLLMError(
+            for attempt in range(2):
+                try:
+                    async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                        self._active_client = client
+                        res = await client.post(f"{self.base_url}/api/chat", json=payload)
+                        if res.status_code != 200:
+                            raise LocalLLMError(
+                                LocalLLMErrorCode.GENERATION_FAILED,
+                                f"Local model inference returned HTTP {res.status_code}: {res.text}",
+                            )
+                        data = res.json()
+                        msg = data.get("message", {}).get("content", "").strip()
+                        if not msg:
+                            raise LocalLLMError(
+                                LocalLLMErrorCode.GENERATION_FAILED,
+                                "Local model produced an empty response.",
+                            )
+                        return msg
+                except LocalLLMError as e:
+                    if e.code == LocalLLMErrorCode.INVALID_INPUT:
+                        raise
+                    last_exc = e
+                except httpx.TimeoutException:
+                    last_exc = LocalLLMError(
                         LocalLLMErrorCode.GENERATION_FAILED,
-                        f"Local model inference returned HTTP {res.status_code}: {res.text}",
+                        "Generation timed out. The local model took too long to respond.",
                     )
-                data = res.json()
-                msg = data.get("message", {}).get("content", "").strip()
-                if not msg:
+                except Exception as e:
+                    if self._cancel_requested:
+                        raise LocalLLMError(
+                            LocalLLMErrorCode.GENERATION_CANCELLED,
+                            "Generation was cancelled by user.",
+                        )
+                    last_exc = e
+                finally:
+                    self._active_client = None
+
+                if self._cancel_requested:
                     raise LocalLLMError(
-                        LocalLLMErrorCode.GENERATION_FAILED,
-                        "Local model produced an empty response.",
+                        LocalLLMErrorCode.GENERATION_CANCELLED,
+                        "Generation was cancelled by user.",
                     )
-                return msg
-        except httpx.TimeoutException:
+
+                # One retry: the first attempt may have been a cold start or a
+                # transient runtime hiccup. Refresh state and try once more.
+                if attempt == 0:
+                    logger.warning(
+                        "LocalLLM generation attempt 1 failed (%s) — retrying once.", last_exc
+                    )
+                    try:
+                        await self.initialize()
+                    except Exception:
+                        pass
+                    if not self.is_ready():
+                        break
+                    payload["model"] = self.model
+                    await asyncio.sleep(0.5)
+
+            message = str(last_exc) if last_exc is not None else "Unknown generation failure"
             raise LocalLLMError(
-                LocalLLMErrorCode.GENERATION_FAILED,
-                "Generation timed out. The local model took too long to respond.",
-            )
-        except LocalLLMError:
-            raise
-        except Exception as e:
-            if self._cancel_requested:
-                raise LocalLLMError(
-                    LocalLLMErrorCode.GENERATION_CANCELLED,
-                    "Generation was cancelled by user.",
-                )
-            raise LocalLLMError(
-                LocalLLMErrorCode.GENERATION_FAILED,
-                f"Generation error: {e}",
+                LocalLLMErrorCode.GENERATION_FAILED, f"Generation error: {message}"
             )
         finally:
+            # The engine is reusable after every outcome, success or failure.
             self._active_client = None
-            self._state = ModelState.READY
+            if self._state != ModelState.DISPOSED:
+                self._state = ModelState.READY
 
     async def stream(
         self,
@@ -253,8 +345,24 @@ class LocalLLM:
         if not messages:
             raise LocalLLMError(LocalLLMErrorCode.INVALID_INPUT, "Messages list cannot be empty")
 
+        # Auto-recover from stale GENERATING state (e.g. after a crash / cancelled stream)
+        if self._state == ModelState.GENERATING:
+            logger.warning("LocalLLM: stale GENERATING state on stream — auto-recovering to READY")
+            self._active_client = None
+            self._state = ModelState.READY
+
+        # If in ERROR state, re-attempt initialization
+        if self._state in (ModelState.ERROR, ModelState.UNINITIALIZED):
+            try:
+                await self.initialize()
+            except Exception:
+                pass
+
         if not self.is_ready():
-            await self.initialize()
+            raise LocalLLMError(
+                LocalLLMErrorCode.MODEL_LOAD_FAILED,
+                "Local LLM is not ready. Ensure Ollama is running with a downloaded model.",
+            )
 
         self._state = ModelState.GENERATING
         self._cancel_requested = False
@@ -271,6 +379,7 @@ class LocalLLM:
             "model": self.model,
             "messages": chat_payload,
             "stream": True,
+            "keep_alive": self.keep_alive,
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
@@ -278,7 +387,7 @@ class LocalLLM:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=90.0) as client:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 self._active_client = client
                 async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
                     if response.status_code != 200:

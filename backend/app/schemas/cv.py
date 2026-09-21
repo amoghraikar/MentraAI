@@ -96,6 +96,9 @@ class CvStatusResponse(BaseModel):
     ear_active: bool
     phone_detection_active: bool
     supported_classes: List[str]
+    engine_reinitializations: int = 0
+    last_error: Optional[str] = None
+    uptime_seconds: float = 0.0
 
 
 class CvCalibrationStartResponse(BaseModel):

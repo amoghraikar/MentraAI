@@ -1,17 +1,56 @@
+import logging
+import secrets
 from typing import Generator
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 import jwt
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, get_password_hash
 from app.db.session import SessionLocal
 from app.models.user import User
 from app.repositories.user_repository import user_repository
+
+logger = logging.getLogger("mentra.auth")
 
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login",
     auto_error=True,
 )
+
+# Internal account that owns AI chat history when nobody is signed in (guest / offline use).
+LOCAL_GUEST_EMAIL = "guest@mentra.local"
+
+
+def get_or_create_local_guest(db: Session) -> User:
+    """Return the internal guest account used for local-only AI access.
+
+    The account exists only so chat history has a valid owner while nobody is
+    signed in. Its password is a random value that is never disclosed, so it
+    cannot be used to sign in through /auth/login.
+    """
+    guest = user_repository.get_by_email(db, email=LOCAL_GUEST_EMAIL)
+    if guest:
+        return guest
+
+    guest = User(
+        email=LOCAL_GUEST_EMAIL,
+        full_name="Mentra Guest",
+        hashed_password=get_password_hash(secrets.token_urlsafe(48)),
+        is_active=True,
+    )
+    db.add(guest)
+    try:
+        db.commit()
+    except IntegrityError:
+        # A concurrent request created the guest first.
+        db.rollback()
+        guest = user_repository.get_by_email(db, email=LOCAL_GUEST_EMAIL)
+        if guest is None:
+            raise
+        return guest
+    db.refresh(guest)
+    return guest
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -29,9 +68,9 @@ def get_current_user(
 ) -> User:
     """Validate bearer token and return the current authenticated user."""
     if token == "offline-demo-jwt-token":
-        demo_user = user_repository.get_by_email(db, email="student@mentra.ai")
-        if demo_user and demo_user.is_active:
-            return demo_user
+        guest = get_or_create_local_guest(db)
+        if guest.is_active:
+            return guest
 
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -79,9 +118,7 @@ def get_current_user_or_local(
     if token:
         try:
             if token == "offline-demo-jwt-token":
-                demo_user = user_repository.get_by_email(db, email="student@mentra.ai")
-                if demo_user:
-                    return demo_user
+                return get_or_create_local_guest(db)
             payload = decode_access_token(token)
             user_id: str | None = payload.get("sub")
             if user_id:
@@ -91,16 +128,5 @@ def get_current_user_or_local(
         except Exception:
             pass
 
-    # Local user for offline / local-only AI use
-    local_user = user_repository.get_by_email(db, email="student@mentra.ai")
-    if not local_user:
-        from app.schemas.user import UserCreate
-        local_user = user_repository.create(
-            db,
-            obj_in=UserCreate(
-                email="student@mentra.ai",
-                password="offline-local-password",
-                full_name="Mentra Student",
-            ),
-        )
-    return local_user
+    # Guest account for offline / local-only AI use
+    return get_or_create_local_guest(db)

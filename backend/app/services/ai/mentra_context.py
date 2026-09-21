@@ -41,6 +41,9 @@ class MentraContext:
     current_topic: Optional[str] = None
     current_goal: Optional[str] = None
     difficulty_level: str = "INTERMEDIATE"  # BEGINNER, INTERMEDIATE, ADVANCED
+    is_session_active: bool = False
+    session_elapsed_minutes: Optional[int] = None
+    session_target_minutes: Optional[int] = None
     current_study_session: Optional[Dict[str, Any]] = None
     recent_performance: Optional[Dict[str, Any]] = None
     recent_mistakes: List[str] = field(default_factory=list)
@@ -64,6 +67,44 @@ class MentraContext:
     hint_level: int = 0
     is_practice_mode: bool = False
 
+    @property
+    def subject_title(self) -> Optional[str]:
+        return self.current_subject
+
+    @property
+    def topic_title(self) -> Optional[str]:
+        return self.current_topic
+
+    @property
+    def study_goal(self) -> Optional[str]:
+        return self.current_goal
+
+    @property
+    def elapsed_minutes(self) -> Optional[int]:
+        return self.session_elapsed_minutes
+
+    @property
+    def target_duration_minutes(self) -> Optional[int]:
+        return self.session_target_minutes
+
+    @property
+    def focus_score(self) -> Optional[int]:
+        if self.current_study_session and "focus_score" in self.current_study_session:
+            return self.current_study_session["focus_score"]
+        return None
+
+    @property
+    def total_sessions_completed(self) -> int:
+        return self.recent_performance.get("sessions_count", 0) if self.recent_performance else 0
+
+    @property
+    def total_study_minutes(self) -> int:
+        return self.recent_performance.get("total_minutes", 0) if self.recent_performance else 0
+
+    @property
+    def average_focus_score(self) -> Optional[float]:
+        return self.recent_performance.get("avg_focus_score") if self.recent_performance else None
+
     @classmethod
     def create_from_db_and_session(
         cls,
@@ -74,36 +115,66 @@ class MentraContext:
         active_session_id: Optional[str] = None,
         history: Optional[List[Dict[str, str]]] = None,
         current_message: str = "",
+        subject_title: Optional[str] = None,
+        topic_title: Optional[str] = None,
+        study_goal: Optional[str] = None,
+        elapsed_minutes: Optional[int] = None,
+        target_duration_minutes: Optional[int] = None,
+        is_session_active: Optional[bool] = None,
+        focus_score: Optional[int] = None,
     ) -> "MentraContext":
         """
-        Constructs a MentraContext instance with real student data from DB,
+        Constructs a MentraContext instance with real student data from DB and active app state,
         strictly avoiding any fabricated values.
         """
         context = cls()
         context.update_from_conversation(history or [], current_message)
 
+        # 1. Directly apply active study state from app if supplied
+        if is_session_active is not None:
+            context.is_session_active = is_session_active
+        elif active_session_id is not None:
+            context.is_session_active = True
+
+        if subject_title:
+            context.current_subject = subject_title
+        if topic_title:
+            context.current_topic = topic_title
+        if study_goal:
+            context.current_goal = study_goal
+        if elapsed_minutes is not None:
+            context.session_elapsed_minutes = elapsed_minutes
+            context.session_duration = elapsed_minutes
+        if target_duration_minutes is not None:
+            context.session_target_minutes = target_duration_minutes
+        if focus_score is not None:
+            if context.current_study_session is None:
+                context.current_study_session = {}
+            context.current_study_session["focus_score"] = focus_score
+
         if not db or not user_id:
             return context
 
         try:
-            # 1. Subject & Topic
-            if subject_id:
+            # 2. Subject & Topic from DB if not already set
+            if subject_id and not context.current_subject:
                 sub = db.query(Subject).filter(Subject.id == subject_id, Subject.user_id == user_id).first()
-                if sub and not context.current_subject:
+                if sub:
                     context.current_subject = sub.title
 
-            if topic_id:
+            if topic_id and not context.current_topic:
                 top = db.query(Topic).filter(Topic.id == topic_id).first()
-                if top and not context.current_topic:
+                if top:
                     context.current_topic = top.title
 
-            # 2. Active Session
+            # 3. Active Session from DB if active_session_id provided
             if active_session_id:
                 sess = db.query(StudySession).filter(
                     StudySession.id == active_session_id,
                     StudySession.user_id == user_id,
                 ).first()
                 if sess:
+                    context.is_session_active = True
                     context.current_study_session = {
                         "session_id": sess.id,
                         "target_minutes": sess.target_duration_minutes,
@@ -112,35 +183,43 @@ class MentraContext:
                         "distractions_count": sess.distractions_count,
                         "study_mode": sess.study_mode,
                     }
-                    context.session_duration = sess.actual_duration_minutes
-                    if not context.current_subject and sess.subject_title:
-                        context.current_subject = sess.subject_title
-                    if not context.current_topic and sess.topic_title:
-                        context.current_topic = sess.topic_title
+                    if context.session_elapsed_minutes is None:
+                        context.session_elapsed_minutes = sess.actual_duration_minutes
+                        context.session_duration = sess.actual_duration_minutes
+                    if context.session_target_minutes is None:
+                        context.session_target_minutes = sess.target_duration_minutes
+                    if not context.current_subject and sess.subject:
+                        context.current_subject = sess.subject.title
+                    if not context.current_topic and sess.topic:
+                        context.current_topic = sess.topic.title
 
-            # 3. Active Goal (top 1)
-            active_goal = db.query(Goal).filter(Goal.user_id == user_id).first()
-            if active_goal:
-                context.current_goal = f"{active_goal.title} ({active_goal.progress_percentage}% completed)"
+            # 4. Active Goals from DB
+            active_goals = db.query(Goal).filter(Goal.user_id == user_id).limit(3).all()
+            if active_goals and not context.current_goal:
+                top_goal = active_goals[0]
+                context.current_goal = f"{top_goal.title} ({top_goal.progress_percentage}% completed)"
 
-            # 4. Recent Performance
-            recent_sessions = (
+            # 5. Real Recent Performance from DB
+            past_sessions = (
                 db.query(StudySession)
                 .filter(StudySession.user_id == user_id)
                 .order_by(desc(StudySession.created_at))
-                .limit(3)
+                .limit(5)
                 .all()
             )
-            if recent_sessions:
-                avg_score = sum(s.focus_score for s in recent_sessions) // len(recent_sessions)
-                total_mins = sum(s.actual_duration_minutes for s in recent_sessions)
+            if past_sessions:
+                avg_score = sum(s.focus_score for s in past_sessions) // len(past_sessions)
+                total_mins = sum(s.actual_duration_minutes for s in past_sessions)
                 context.recent_performance = {
-                    "sessions_count": len(recent_sessions),
+                    "sessions_count": len(past_sessions),
                     "total_minutes": total_mins,
                     "avg_focus_score": avg_score,
+                    "latest_reflection": past_sessions[0].reflection if past_sessions else "good",
                 }
+            else:
+                context.recent_performance = None
 
-            # 5. Relevant Notes (max 2 short snippets)
+            # 6. Relevant Notes (max 2 snippets)
             notes = db.query(Note).filter(Note.user_id == user_id).limit(2).all()
             if notes:
                 context.relevant_notes = [
@@ -179,13 +258,12 @@ class MentraContext:
         elif any(a in msg_lower for a in advanced_triggers):
             self.difficulty_level = "ADVANCED"
 
-        # 2. Confusion Detection
         confusion_triggers = (
-            "i don't get it", "i dont get it", "i'm lost", "im lost",
-            "i don't understand", "i dont understand", "what?", "why?",
+            "i don't get it", "i dont get it", "i'm lost", "im lost", "completely lost",
+            "i don't understand", "i dont understand", "what?", "why?", "lost",
             "this makes no sense", "makes no sense", "bro i don't understand",
             "bro i dont understand", "can you explain that again", "still confused",
-            "i'm confused", "im confused", "lost me"
+            "i'm confused", "im confused", "lost me", "not getting it", "too hard"
         )
         if any(c in msg_lower for c in confusion_triggers):
             self.is_confused = True
@@ -279,7 +357,7 @@ class MentraContext:
                 if self.current_topic:
                     break
 
-    def format_for_prompt(self, current_user_message: str) -> str:
+    def format_for_prompt(self, current_user_message: str = "") -> str:
         """
         Formats context applying the strict Context Priority rules:
         1. Current user message (highest priority)
@@ -324,17 +402,32 @@ class MentraContext:
         if directives:
             sections.append("[ACTIVE INTERACTION DIRECTIVE]:\n" + "\n".join(directives))
 
-        # 3. Active Study Session (if real)
-        if self.current_study_session:
-            sess = self.current_study_session
-            sections.append(
-                f"[ACTIVE SESSION]: {sess.get('actual_minutes', 0)}m of {sess.get('target_minutes', 45)}m elapsed | "
-                f"Focus Score: {sess.get('focus_score', 90)}/100 | Distractions: {sess.get('distractions_count', 0)}"
-            )
+        # 3. Active Study Session (if active)
+        if self.is_session_active or self.current_study_session:
+            elapsed = self.session_elapsed_minutes if self.session_elapsed_minutes is not None else (self.current_study_session.get('actual_minutes', 0) if self.current_study_session else 0)
+            target = self.session_target_minutes if self.session_target_minutes is not None else (self.current_study_session.get('target_minutes', 45) if self.current_study_session else 45)
+            session_lines = [
+                f"Status: Actively Studying",
+                f"Active Subject: {self.current_subject or 'General Studies'}",
+                f"Active Topic: {self.current_topic or 'Core Concepts'}",
+                f"Session Timer: {elapsed} minutes elapsed (Target: {target} minutes)",
+            ]
+            if self.current_goal:
+                session_lines.append(f"Active Goal: {self.current_goal}")
+            sections.append("[ACTIVE STUDY SESSION]:\n" + "\n".join(session_lines))
 
-        # 4. Relevant Student Information (if real)
-        if self.current_goal:
-            sections.append(f"[ACTIVE GOAL]: {self.current_goal}")
+        # 4. Relevant Student Performance & Goals (if real data exists)
+        if self.recent_performance:
+            p = self.recent_performance
+            sections.append(
+                f"[STUDY HISTORY & PERFORMANCE]: {p.get('sessions_count', 0)} completed sessions on record | "
+                f"{p.get('total_minutes', 0)} total study minutes | {p.get('avg_focus_score', 0)}% average focus score"
+            )
+        else:
+            sections.append("[STUDY HISTORY]: No previous recorded sessions. If asked, acknowledge you don't have past study data yet.")
+
+        if self.current_goal and not (self.is_session_active or self.current_study_session):
+            sections.append(f"[STUDY GOAL]: {self.current_goal}")
 
         if self.relevant_notes:
             sections.append("[RELEVANT STUDENT NOTES]:\n" + "\n".join(self.relevant_notes))

@@ -239,6 +239,7 @@ class _WorkspaceLayoutState extends State<WorkspaceLayout> {
         case AppRoute.aiCoach:
           content = AiCoachPage(
             aiCoachRepository: _aiCoachRepo,
+            sessionController: _sessionController,
           );
           break;
         case AppRoute.settings:

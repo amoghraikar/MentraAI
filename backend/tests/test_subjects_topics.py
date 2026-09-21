@@ -7,7 +7,7 @@ client = TestClient(app)
 
 def create_authenticated_user() -> tuple[dict, str]:
     email = f"user_{uuid.uuid4().hex[:8]}@mentra.ai"
-    password = "Password123!"
+    password = "Mentra#Study42"
     reg_res = client.post(
         "/api/v1/auth/register",
         json={"email": email, "password": password, "full_name": "Test User"},

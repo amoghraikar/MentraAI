@@ -51,6 +51,13 @@ class MockAiCoachRepository implements AiCoachRepository {
     String question, {
     String? subjectId,
     String? topicId,
+    String? subjectTitle,
+    String? topicTitle,
+    String? studyGoal,
+    int? elapsedMinutes,
+    int? targetDurationMinutes,
+    bool? isSessionActive,
+    int? focusScore,
     List<ChatMessage>? history,
     String? provider,
     String? apiKey,
@@ -72,6 +79,13 @@ class MockAiCoachRepository implements AiCoachRepository {
     String question, {
     String? subjectId,
     String? topicId,
+    String? subjectTitle,
+    String? topicTitle,
+    String? studyGoal,
+    int? elapsedMinutes,
+    int? targetDurationMinutes,
+    bool? isSessionActive,
+    int? focusScore,
     List<ChatMessage>? history,
     String? customSystemPrompt,
   }) async* {

@@ -176,8 +176,8 @@ void main() {
     expect(find.text('Daily Focus & Attention Trend'), findsOneWidget);
     expect(find.text('Distraction Telemetry Breakdown'), findsOneWidget);
 
-    // 5. Navigate to AI Coach
-    await tester.tap(find.text('AI Coach'));
+    // 5. Navigate to Mentra AI
+    await tester.tap(find.text('Mentra AI'));
     await tester.pumpAndSettle();
     expect(find.text('MENTRA'), findsWidgets);
     expect(find.text('Learn something today.'), findsOneWidget);

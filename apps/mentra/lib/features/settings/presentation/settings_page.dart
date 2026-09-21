@@ -353,7 +353,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Canonical Model: qwen2.5:0.5b', style: AppTypography.titleSmall),
+                      Text('Canonical Model: Qwen 2.5 1.5B', style: AppTypography.titleSmall),
                       Text('Open-weight instruction-tuned model running locally via Ollama runtime', style: AppTypography.bodySmall),
                     ],
                   ),

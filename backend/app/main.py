@@ -1,53 +1,64 @@
+import asyncio
 from contextlib import asynccontextmanager
 import logging
+from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.v1.endpoints.health import HealthResponse
 from app.api.v1.router import api_router
 from app.core.config import settings
-from app.core.security import get_password_hash
 from app.db.base import Base
 import app.models  # noqa: F401
 from app.db.session import SessionLocal, engine
 from app.models.user import User
+from app.services.ai.local_llm import local_llm_engine
 
 logger = logging.getLogger("mentra.main")
 
 
+async def _warmup_local_llm() -> None:
+    """Load the local model into memory in the background at startup."""
+    try:
+        warmed = await local_llm_engine.warmup()
+        if warmed:
+            logger.info("Local LLM ready for the first request (no cold start).")
+        else:
+            logger.warning(
+                "Local LLM warm-up incomplete; the first request will load the model."
+            )
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Local LLM warm-up failed: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure database tables exist with clean schema
+    # Ensure database tables exist with a clean schema
     Base.metadata.create_all(bind=engine)
-    logger.info("Database schema initialized. Running in clean production mode.")
+    logger.info("Database schema initialized.")
 
-    # Ensure demo accounts exist so login always succeeds out-of-the-box
+    # Report the accounts that actually exist. Mentra never invents accounts or
+    # rewrites stored credentials on boot: overwriting hashes here previously
+    # reset real users' passwords to a shared demo value on every restart.
     try:
         db = SessionLocal()
-        default_users = [
-            ("student@mentra.ai", "Mentra Student", "password123"),
-            ("demo@mentra.ai", "Alex Chen", "password123"),
-            ("alex@mentra.ai", "Alex Chen", "password123"),
-        ]
-        for email, full_name, password in default_users:
-            u = db.query(User).filter(User.email == email).first()
-            if not u:
-                u = User(
-                    email=email,
-                    full_name=full_name,
-                    hashed_password=get_password_hash(password),
-                    is_active=True,
-                )
-                db.add(u)
-            else:
-                u.hashed_password = get_password_hash(password)
-        db.commit()
+        user_count = db.query(func.count(User.id)).scalar() or 0
         db.close()
+        logger.info("Registered user accounts: %d", user_count)
     except Exception as e:
-        logger.warning(f"Auto-seed error: {e}")
+        logger.warning("Could not read user count at startup: %s", e)
+
+    # Warm the local model so the AI coach answers on the first try.
+    warmup_task: Optional[asyncio.Task] = None
+    if settings.LOCAL_LLM_WARMUP_ON_STARTUP:
+        warmup_task = asyncio.create_task(_warmup_local_llm())
+        app.state.local_llm_warmup_task = warmup_task
 
     yield
+
+    if warmup_task is not None and not warmup_task.done():
+        warmup_task.cancel()
 
 
 app = FastAPI(

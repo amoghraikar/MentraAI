@@ -31,6 +31,17 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"
     GEMINI_API_KEY: Union[str, None] = None
 
+    # Local on-device LLM runtime (Ollama)
+    LOCAL_LLM_URL: str = "http://127.0.0.1:11434"
+    LOCAL_LLM_MODEL: str = "qwen2.5:1.5b"
+    # Keep the model resident in RAM between requests. Without this Ollama unloads
+    # the model after idle time and the next request pays a multi-second cold
+    # start, which used to look like "the AI coach randomly stopped working".
+    LOCAL_LLM_KEEP_ALIVE: str = "30m"
+    LOCAL_LLM_TIMEOUT_SECONDS: float = 120.0
+    # Warm the model up in the background on backend startup.
+    LOCAL_LLM_WARMUP_ON_STARTUP: bool = True
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:

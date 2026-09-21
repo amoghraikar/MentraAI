@@ -1,4 +1,5 @@
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models.user import User
@@ -17,7 +18,16 @@ class AuthService:
             )
 
         hashed_password = get_password_hash(user_in.password)
-        return user_repository.create(db, user_in, hashed_password)
+        try:
+            return user_repository.create(db, user_in, hashed_password)
+        except IntegrityError:
+            # Two registrations raced for the same address; the unique index on
+            # users.email rejected the loser. Report a conflict, not a 500.
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A user with this email already exists.",
+            )
 
     def authenticate_user(self, db: Session, login_data: LoginRequest) -> User:
         user = user_repository.get_by_email(db, login_data.email)

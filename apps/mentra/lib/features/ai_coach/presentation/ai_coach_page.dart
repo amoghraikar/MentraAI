@@ -6,6 +6,7 @@ import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/mentra_badge.dart';
+import '../../study_session/presentation/session_controller.dart';
 import '../domain/models/coach_insight.dart';
 import '../domain/repositories/ai_coach_repository.dart';
 import 'widgets/chat_history_drawer.dart';
@@ -16,9 +17,21 @@ class AiCoachPage extends StatefulWidget {
   const AiCoachPage({
     super.key,
     required this.aiCoachRepository,
+    this.sessionController,
+    this.subjectId,
+    this.topicId,
+    this.subjectTitle,
+    this.topicTitle,
+    this.studyGoal,
   });
 
   final AiCoachRepository aiCoachRepository;
+  final SessionController? sessionController;
+  final String? subjectId;
+  final String? topicId;
+  final String? subjectTitle;
+  final String? topicTitle;
+  final String? studyGoal;
 
   @override
   State<AiCoachPage> createState() => _AiCoachPageState();
@@ -135,9 +148,29 @@ class _AiCoachPageState extends State<AiCoachPage> {
       _messages.add(coachPlaceholder);
     });
 
+    final session = widget.sessionController;
+    final isSessionActive = session != null && (session.state == SessionState.active || session.state == SessionState.paused);
+    final subjectId = widget.subjectId ?? (isSessionActive ? session.currentConfig?.subjectId : null);
+    final topicId = widget.topicId ?? (isSessionActive ? session.currentConfig?.topicId : null);
+    final subjectTitle = widget.subjectTitle ?? (isSessionActive ? session.currentConfig?.subjectTitle : null);
+    final topicTitle = widget.topicTitle ?? (isSessionActive ? session.currentConfig?.topicTitle : null);
+    final studyGoal = widget.studyGoal ?? (isSessionActive ? session.currentConfig?.subjectTitle : null);
+    final elapsedMinutes = isSessionActive ? (session.elapsedSeconds / 60).round() : null;
+    final targetDurationMinutes = isSessionActive ? session.currentConfig?.targetDurationMinutes : null;
+    final focusScore = isSessionActive ? session.focusScore : null;
+
     try {
       final stream = widget.aiCoachRepository.streamCoachQuestion(
         text,
+        subjectId: subjectId,
+        topicId: topicId,
+        subjectTitle: subjectTitle,
+        topicTitle: topicTitle,
+        studyGoal: studyGoal,
+        elapsedMinutes: elapsedMinutes,
+        targetDurationMinutes: targetDurationMinutes,
+        isSessionActive: isSessionActive,
+        focusScore: focusScore,
         history: _messages.sublist(0, _messages.length - 1),
       );
 
@@ -165,6 +198,15 @@ class _AiCoachPageState extends State<AiCoachPage> {
             try {
               final fallback = await widget.aiCoachRepository.askCoachQuestion(
                 text,
+                subjectId: subjectId,
+                topicId: topicId,
+                subjectTitle: subjectTitle,
+                topicTitle: topicTitle,
+                studyGoal: studyGoal,
+                elapsedMinutes: elapsedMinutes,
+                targetDurationMinutes: targetDurationMinutes,
+                isSessionActive: isSessionActive,
+                focusScore: focusScore,
                 history: _messages.sublist(0, _messages.length - 1),
               );
               if (!mounted) return;
@@ -204,6 +246,15 @@ class _AiCoachPageState extends State<AiCoachPage> {
       try {
         final fallback = await widget.aiCoachRepository.askCoachQuestion(
           text,
+          subjectId: subjectId,
+          topicId: topicId,
+          subjectTitle: subjectTitle,
+          topicTitle: topicTitle,
+          studyGoal: studyGoal,
+          elapsedMinutes: elapsedMinutes,
+          targetDurationMinutes: targetDurationMinutes,
+          isSessionActive: isSessionActive,
+          focusScore: focusScore,
           history: _messages.where((m) => m.id != coachMsgId).toList(),
         );
         if (!mounted) return;

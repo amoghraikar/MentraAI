@@ -64,6 +64,13 @@ class ApiAiCoachRepository implements AiCoachRepository {
     String question, {
     String? subjectId,
     String? topicId,
+    String? subjectTitle,
+    String? topicTitle,
+    String? studyGoal,
+    int? elapsedMinutes,
+    int? targetDurationMinutes,
+    bool? isSessionActive,
+    int? focusScore,
     List<ChatMessage>? history,
     String? provider,
     String? apiKey,
@@ -87,6 +94,13 @@ class ApiAiCoachRepository implements AiCoachRepository {
           'history': historyPayload,
           'subject_id': subjectId,
           'topic_id': topicId,
+          'subject_title': ?subjectTitle,
+          'topic_title': ?topicTitle,
+          'study_goal': ?studyGoal,
+          'elapsed_minutes': ?elapsedMinutes,
+          'target_duration_minutes': ?targetDurationMinutes,
+          'is_session_active': ?isSessionActive,
+          'focus_score': ?focusScore,
           'include_study_context': true,
           if (provider != null) ...{'provider': provider},
           if (apiKey != null && apiKey.isNotEmpty) 'api_key': apiKey,
@@ -126,6 +140,13 @@ class ApiAiCoachRepository implements AiCoachRepository {
     String question, {
     String? subjectId,
     String? topicId,
+    String? subjectTitle,
+    String? topicTitle,
+    String? studyGoal,
+    int? elapsedMinutes,
+    int? targetDurationMinutes,
+    bool? isSessionActive,
+    int? focusScore,
     List<ChatMessage>? history,
     String? customSystemPrompt,
   }) async* {
@@ -143,6 +164,13 @@ class ApiAiCoachRepository implements AiCoachRepository {
       };
       if (subjectId != null) body['subject_id'] = subjectId;
       if (topicId != null) body['topic_id'] = topicId;
+      if (subjectTitle != null) body['subject_title'] = subjectTitle;
+      if (topicTitle != null) body['topic_title'] = topicTitle;
+      if (studyGoal != null) body['study_goal'] = studyGoal;
+      if (elapsedMinutes != null) body['elapsed_minutes'] = elapsedMinutes;
+      if (targetDurationMinutes != null) body['target_duration_minutes'] = targetDurationMinutes;
+      if (isSessionActive != null) body['is_session_active'] = isSessionActive;
+      if (focusScore != null) body['focus_score'] = focusScore;
       if (customSystemPrompt != null && customSystemPrompt.isNotEmpty) {
         body['custom_system_prompt'] = customSystemPrompt;
       }
@@ -267,7 +295,7 @@ class ApiAiCoachRepository implements AiCoachRepository {
         body: {
           'title': title,
           'content': content,
-          'filename': ?filename,
+          'filename': filename,
         },
       );
       if (res is Map<String, dynamic>) {

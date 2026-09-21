@@ -84,3 +84,6 @@ redis_data/
 *.db
 *.sqlite
 *.sqlite3
+scratch/
+backend/scratch/
+

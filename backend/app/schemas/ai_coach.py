@@ -16,11 +16,21 @@ class AiCoachChatRequest(BaseModel):
     topic_id: Optional[str] = Field(None, description="Optional active topic identifier")
     active_session_id: Optional[str] = Field(None, description="Optional currently active study session ID")
     include_study_context: bool = Field(True, description="Whether to enrich prompt with user study metrics")
-    provider: Optional[str] = Field(None, description="Custom provider: openai, gemini, groq, openrouter, ollama, custom")
-    api_key: Optional[str] = Field(None, description="Custom API key")
-    model: Optional[str] = Field(None, description="Custom model name (e.g. gpt-4o, gemini-1.5-pro, llama-3.3-70b)")
-    custom_system_prompt: Optional[str] = Field(None, description="Custom system instructions for the GPT")
-    custom_endpoint_url: Optional[str] = Field(None, description="Custom OpenAI-compatible base URL")
+    
+    # Real Study State from App
+    subject_title: Optional[str] = Field(None, description="Active subject title from app state")
+    topic_title: Optional[str] = Field(None, description="Active topic title from app state")
+    study_goal: Optional[str] = Field(None, description="Active study goal from app state")
+    elapsed_minutes: Optional[int] = Field(None, description="Active session elapsed minutes")
+    target_duration_minutes: Optional[int] = Field(None, description="Active session target duration in minutes")
+    is_session_active: Optional[bool] = Field(None, description="Whether user is currently inside an active study session")
+    focus_score: Optional[int] = Field(None, description="Current session focus score")
+    
+    provider: Optional[str] = Field(None, description="Legacy field")
+    api_key: Optional[str] = Field(None, description="Legacy field")
+    model: Optional[str] = Field(None, description="Legacy field")
+    custom_system_prompt: Optional[str] = Field(None, description="Custom system instructions")
+    custom_endpoint_url: Optional[str] = Field(None, description="Legacy field")
     attached_material_text: Optional[str] = Field(None, description="Optional study material pasted/attached with this prompt")
 
 

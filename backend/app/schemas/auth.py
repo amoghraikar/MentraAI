@@ -1,10 +1,17 @@
-from pydantic import BaseModel, EmailStr
-from app.schemas.user import UserResponse
+from pydantic import BaseModel, EmailStr, Field
+from app.schemas.user import UserResponse, BCRYPT_MAX_PASSWORD_BYTES
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    # No strength rules here (never leak policy on login), but bound the input
+    # so oversized payloads are rejected instead of being fed to bcrypt.
+    password: str = Field(
+        ...,
+        min_length=1,
+        max_length=BCRYPT_MAX_PASSWORD_BYTES,
+        description="Account password.",
+    )
 
 
 class TokenResponse(BaseModel):

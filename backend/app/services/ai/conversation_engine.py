@@ -10,10 +10,32 @@ Features:
 - Strict context priority enforcement
 """
 
+from dataclasses import dataclass, field
+from enum import Enum
 import re
 from typing import Any, Dict, List, Optional, Tuple
 from app.services.ai.mentra_context import MentraContext
 from app.services.ai.prompts import MENTRA_SYSTEM_PROMPT
+
+
+class IntentType(str, Enum):
+    EXPLAIN = "EXPLAIN"
+    TEACH = "TEACH"
+    PRACTICE = "PRACTICE"
+    QUIZ = "QUIZ"
+    HINT = "HINT"
+    REVIEW_MISTAKE = "REVIEW_MISTAKE"
+    MOTIVATE = "MOTIVATE"
+    SESSION_HELP = "SESSION_HELP"
+    PROGRESS_QUESTION = "PROGRESS_QUESTION"
+    GENERAL_CHAT = "GENERAL_CHAT"
+
+
+@dataclass
+class MentraIntent:
+    type: IntentType
+    confidence: float = 1.0
+    parameters: Dict[str, Any] = field(default_factory=dict)
 
 
 class ConversationEngine:
@@ -23,6 +45,44 @@ class ConversationEngine:
     """
 
     MAX_RAW_TURNS = 8  # Maximum recent turns passed verbatim to local LLM
+
+    @classmethod
+    def detect_intent(cls, message: str, context: Optional[MentraContext] = None) -> MentraIntent:
+        """
+        Lightweight intent recognition to classify user request into a MentraIntent.
+        Does not create separate agents; handled uniformly by the single Mentra model.
+        """
+        lower = message.strip().lower()
+
+        # Check for mistake review
+        if any(w in lower for w in ("why was i wrong", "explain my mistake", "why is that wrong", "where did i go wrong", "why incorrect")):
+            return MentraIntent(type=IntentType.REVIEW_MISTAKE, confidence=0.95)
+
+        # Check for hints
+        if any(w in lower for w in ("give me a hint", "hint please", "need a hint", "can i get a hint")):
+            return MentraIntent(type=IntentType.HINT, confidence=0.95)
+
+        # Check for quiz / practice
+        if any(w in lower for w in ("give me a question", "test me", "quiz me", "give me a problem", "practice question", "another question", "harder question")):
+            return MentraIntent(type=IntentType.PRACTICE if "practice" in lower else IntentType.QUIZ, confidence=0.9)
+
+        # Check for session timing / help
+        if any(w in lower for w in ("how long have i been studying", "how much longer", "study time", "session time", "timer")):
+            return MentraIntent(type=IntentType.SESSION_HELP, confidence=0.95)
+
+        # Check for progress / stats questions
+        if any(w in lower for w in ("how am i doing", "what are my weak areas", "my progress", "my stats", "my performance", "what am i studying")):
+            return MentraIntent(type=IntentType.PROGRESS_QUESTION, confidence=0.9)
+
+        # Check for motivation / distraction / fatigue
+        if any(w in lower for w in ("i'm tired", "im tired", "i am tired", "distracted", "getting distracted", "lost focus", "can't focus", "cant focus", "motivate me")):
+            return MentraIntent(type=IntentType.MOTIVATE, confidence=0.9)
+
+        # Check for explanation
+        if any(w in lower for w in ("explain", "what is", "how does", "what are", "why does", "define", "break down", "teach me")):
+            return MentraIntent(type=IntentType.EXPLAIN, confidence=0.85)
+
+        return MentraIntent(type=IntentType.GENERAL_CHAT, confidence=0.7)
 
     @classmethod
     def sanitize_history(cls, raw_history: List[Any]) -> List[Dict[str, str]]:

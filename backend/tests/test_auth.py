@@ -39,7 +39,7 @@ def test_registration_duplicate_email() -> None:
         "/api/v1/auth/register",
         json={
             "email": email,
-            "password": "Password123!",
+            "password": "Mentra#Study42",
             "full_name": "First Register",
         },
     )
@@ -63,7 +63,7 @@ def test_registration_invalid_email() -> None:
         "/api/v1/auth/register",
         json={
             "email": "not-an-email",
-            "password": "Password123!",
+            "password": "Mentra#Study42",
         },
     )
     assert response.status_code == 422

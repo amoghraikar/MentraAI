@@ -38,7 +38,7 @@ enum AppRoute {
   ),
   aiCoach(
     path: '/ai-coach',
-    label: 'AI Coach',
+    label: 'Mentra AI',
     icon: Icons.psychology_outlined,
     activeIcon: Icons.psychology_rounded,
     group: NavGroup.insights,
