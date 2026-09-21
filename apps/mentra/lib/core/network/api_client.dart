@@ -23,7 +23,7 @@ class ApiClient {
     String? baseUrl,
     http.Client? httpClient,
     this.tokenProvider,
-    this.timeout = const Duration(seconds: 15),
+    this.timeout = const Duration(seconds: 120),
   })  : baseUrl = baseUrl ??
             const String.fromEnvironment(
               'MENTRA_API_URL',
@@ -122,7 +122,9 @@ class ApiClient {
     final effectiveToken = await _resolveToken(token);
     final uri = _buildUri(path);
     final request = http.Request('POST', uri);
-    request.headers.addAll(_buildHeaders(token: effectiveToken));
+    final headers = _buildHeaders(token: effectiveToken);
+    headers['Accept'] = 'text/event-stream, application/json, */*';
+    request.headers.addAll(headers);
     if (body != null) {
       request.body = jsonEncode(body);
     }

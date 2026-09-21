@@ -205,6 +205,11 @@ class ApiAiCoachRepository implements AiCoachRepository {
                   yield chunk;
                 }
                 if (data['done'] == true) {
+                  final fullMsg = data['message'] as String? ?? '';
+                  if (!receivedAnyChunk && fullMsg.isNotEmpty) {
+                    receivedAnyChunk = true;
+                    yield fullMsg;
+                  }
                   return;
                 }
               }
@@ -218,6 +223,29 @@ class ApiAiCoachRepository implements AiCoachRepository {
       }
     } catch (e) {
       if (!receivedAnyChunk) {
+        // Fallback: If streaming channel fails, fetch full response via standard POST
+        try {
+          final singleRes = await askCoachQuestion(
+            question,
+            subjectId: subjectId,
+            topicId: topicId,
+            subjectTitle: subjectTitle,
+            topicTitle: topicTitle,
+            studyGoal: studyGoal,
+            elapsedMinutes: elapsedMinutes,
+            targetDurationMinutes: targetDurationMinutes,
+            isSessionActive: isSessionActive,
+            focusScore: focusScore,
+            history: history,
+            customSystemPrompt: customSystemPrompt,
+          );
+          if (singleRes.text.isNotEmpty &&
+              !singleRes.text.contains("isn't available right now")) {
+            yield singleRes.text;
+            return;
+          }
+        } catch (_) {}
+
         yield "Mentra's local model isn't available right now. Please ensure the local AI service is running.";
       }
     }
