@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     goals,
     health,
     notes,
+    orchestrator,
     sessions,
     subjects,
     topics,
@@ -26,3 +27,4 @@ api_router.include_router(sessions.router, prefix="/sessions", tags=["sessions"]
 api_router.include_router(ai_coach.router, prefix="/ai-coach", tags=["ai-coach"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 api_router.include_router(cv.router, prefix="/cv", tags=["cv"])
+api_router.include_router(orchestrator.router, prefix="/orchestrator", tags=["orchestrator"])

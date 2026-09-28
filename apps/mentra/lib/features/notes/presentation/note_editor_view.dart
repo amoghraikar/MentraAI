@@ -172,15 +172,17 @@ class _NoteEditorViewState extends State<NoteEditorView> {
               // Editable Title
               TextField(
                 controller: _titleController,
-                style: AppTypography.displayMedium.copyWith(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 26,
+                style: AppTypography.headlineSmall.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 24,
+                  letterSpacing: -0.4,
                 ),
                 decoration: InputDecoration(
                   hintText: 'Note Title...',
-                  hintStyle: AppTypography.displayMedium.copyWith(
+                  hintStyle: AppTypography.headlineSmall.copyWith(
                     color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 24,
                   ),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.zero,

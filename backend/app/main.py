@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.api.v1.endpoints.health import HealthResponse
 from app.api.v1.router import api_router
@@ -36,6 +36,19 @@ async def _warmup_local_llm() -> None:
 async def lifespan(app: FastAPI):
     # Ensure database tables exist with a clean schema
     Base.metadata.create_all(bind=engine)
+    try:
+        with engine.connect() as conn:
+            for col, col_def in [
+                ("conversation_id", "VARCHAR(36) REFERENCES conversations(id) ON DELETE CASCADE"),
+                ("role", "VARCHAR(20) DEFAULT 'user' NOT NULL"),
+            ]:
+                try:
+                    conn.execute(text(f"ALTER TABLE coach_messages ADD COLUMN {col} {col_def}"))
+                    conn.commit()
+                except Exception:
+                    pass
+    except Exception:
+        pass
     logger.info("Database schema initialized.")
 
     # Report the accounts that actually exist. Mentra never invents accounts or

@@ -1,6 +1,7 @@
 import 'dart:math';
 import '../../domain/models/coach_insight.dart';
 import '../../domain/repositories/ai_coach_repository.dart';
+import '../../domain/services/built_in_study_coach.dart';
 
 class MockAiCoachRepository implements AiCoachRepository {
   @override
@@ -66,10 +67,21 @@ class MockAiCoachRepository implements AiCoachRepository {
     String? customEndpointUrl,
     String? attachedMaterialText,
   }) async {
+    final replyText = await BuiltInStudyCoach.instance.generateResponse(
+      question: question,
+      subjectTitle: subjectTitle,
+      topicTitle: topicTitle,
+      studyGoal: studyGoal,
+      elapsedMinutes: elapsedMinutes,
+      targetDurationMinutes: targetDurationMinutes,
+      focusScore: focusScore,
+      history: history,
+    );
+
     return ChatMessage(
       id: 'msg_${Random().nextInt(999999)}',
       sender: 'coach',
-      text: "Mentra's local model isn't available right now. Please ensure the local AI service is running on your machine.",
+      text: replyText,
       timestamp: DateTime.now(),
     );
   }
@@ -88,13 +100,17 @@ class MockAiCoachRepository implements AiCoachRepository {
     int? focusScore,
     List<ChatMessage>? history,
     String? customSystemPrompt,
-  }) async* {
-    final reply = await askCoachQuestion(question, history: history);
-    final words = reply.text.split(' ');
-    for (int i = 0; i < words.length; i++) {
-      yield i == 0 ? words[i] : ' ${words[i]}';
-      await Future.delayed(const Duration(milliseconds: 20));
-    }
+  }) {
+    return BuiltInStudyCoach.instance.streamResponse(
+      question: question,
+      subjectTitle: subjectTitle,
+      topicTitle: topicTitle,
+      studyGoal: studyGoal,
+      elapsedMinutes: elapsedMinutes,
+      targetDurationMinutes: targetDurationMinutes,
+      focusScore: focusScore,
+      history: history,
+    );
   }
 
   @override
@@ -206,10 +222,10 @@ class MockAiCoachRepository implements AiCoachRepository {
   @override
   Future<Map<String, dynamic>> getModelStatus() async {
     return {
-      'state': 'OFFLINE',
-      'model': 'local-llm',
-      'status_message': "Mentra's local model isn't available right now.",
-      'is_ready': false,
+      'state': 'READY',
+      'model': 'Mentra Neural Core (Built-In)',
+      'status_message': 'Mentra AI is active and ready.',
+      'is_ready': true,
     };
   }
 

@@ -76,7 +76,7 @@ class CvService:
 
     _instance = None
     _lock = threading.Lock()         # guards singleton creation
-    _frame_lock = threading.Lock()   # serializes ALL engine access
+    _frame_lock = threading.RLock()  # reentrant lock serializes ALL engine access safely
 
     # Re-initialization policy
     _MAX_CONSECUTIVE_FAILURES = 3
@@ -387,6 +387,58 @@ class CvService:
             return
         with self.__class__._frame_lock:
             self.engine.reset()
+
+    def _get_session_metrics_unlocked(self) -> Dict[str, Any]:
+        if self.engine is None or not hasattr(self.engine, "behavior_engine"):
+            return {}
+        if hasattr(self.engine.behavior_engine, "accumulator"):
+            return self.engine.behavior_engine.accumulator.metrics.to_dict()
+        return {}
+
+    def get_session_metrics(self) -> Dict[str, Any]:
+        """Return the current accumulated session metrics from the CV behavior engine."""
+        with self.__class__._frame_lock:
+            return self._get_session_metrics_unlocked()
+
+    def get_current_focus_state(self) -> Dict[str, Any]:
+        """Return current normalized high-level focus state and duration."""
+        if self.engine is None or not hasattr(self.engine, "behavior_engine"):
+            return {
+                "focus_state": "UNKNOWN",
+                "focus_duration_seconds": 0.0,
+                "recent_alert": None,
+                "camera_quality": "UNKNOWN",
+            }
+        with self.__class__._frame_lock:
+            state = getattr(self.engine.behavior_engine, "_current_state", "UNKNOWN")
+            state_val = state.value if hasattr(state, "value") else str(state)
+            metrics = self._get_session_metrics_unlocked()
+            duration = 0.0
+            if state_val == "LOOKING_AWAY":
+                duration = metrics.get("looking_away_duration", 0.0)
+            elif state_val == "FOCUSED":
+                duration = metrics.get("focused_duration", 0.0)
+            elif state_val == "EYES_CLOSED":
+                duration = metrics.get("eyes_closed_duration", 0.0)
+            elif state_val == "PHONE_DETECTED":
+                duration = metrics.get("phone_detected_duration", 0.0)
+            elif state_val == "FACE_NOT_DETECTED":
+                duration = metrics.get("face_not_detected_duration", 0.0)
+
+            recent_alert_desc = None
+            if self._last_result and self._last_result.get("alert"):
+                recent_alert_desc = self._last_result["alert"].get("message")
+
+            cam_quality = "GOOD"
+            if self._last_result and self._last_result.get("camera_quality"):
+                cam_quality = str(self._last_result["camera_quality"].get("status", "GOOD"))
+
+            return {
+                "focus_state": state_val,
+                "focus_duration_seconds": round(duration, 1),
+                "recent_alert": recent_alert_desc,
+                "camera_quality": cam_quality,
+            }
 
     # ------------------------------------------------------------------
     # Status

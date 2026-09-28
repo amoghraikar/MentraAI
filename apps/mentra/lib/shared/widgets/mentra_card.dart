@@ -35,15 +35,15 @@ class _MentraCardState extends State<MentraCard> {
     final defaultBorderColor = widget.isSelected
         ? theme.colorScheme.primary
         : (_isHovered
-            ? (isDark ? const Color(0xFF3E3E3E) : const Color(0xFFD8D8D6))
+            ? (isDark ? const Color(0xFF484742) : const Color(0xFFD2D0CB))
             : theme.dividerColor);
 
     final defaultBgColor = widget.backgroundColor ??
         (widget.isSelected
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.15)
             : (_isHovered
-                ? theme.colorScheme.surfaceContainerHigh
-                : theme.colorScheme.surfaceContainer));
+                ? (isDark ? const Color(0xFF292927) : const Color(0xFFF7F7F5))
+                : theme.cardColor));
 
     Widget content = AnimatedContainer(
       duration: const Duration(milliseconds: 150),
@@ -51,7 +51,7 @@ class _MentraCardState extends State<MentraCard> {
       padding: widget.padding,
       decoration: BoxDecoration(
         color: defaultBgColor,
-        borderRadius: AppRadius.borderMd,
+        borderRadius: AppRadius.borderLg,
         border: Border.all(
           color: widget.borderColor ?? defaultBorderColor,
           width: widget.isSelected ? 1.5 : 1.0,

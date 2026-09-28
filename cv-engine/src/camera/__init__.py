@@ -6,6 +6,7 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
+from .lifecycle import CameraLifecycleManager, CameraState
 from .quality import CameraQualityEvaluator, CameraQualityResult, CameraQualityStatus
 
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
@@ -34,27 +35,27 @@ class MentraBadge extends StatelessWidget {
 
     switch (variant) {
       case MentraBadgeVariant.primary:
-        bg = theme.colorScheme.primary.withValues(alpha: isDark ? 0.2 : 0.1);
-        fg = theme.colorScheme.primary;
-        border = theme.colorScheme.primary.withValues(alpha: 0.3);
+        bg = isDark ? const Color(0xFF1E2E28) : AppColors.primarySoft;
+        fg = isDark ? AppColors.primaryDark : AppColors.primary;
+        border = isDark ? const Color(0xFF2B4D40) : const Color(0xFFC7E2D7);
         break;
       case MentraBadgeVariant.success:
-        bg = const Color(0xFF16A34A).withValues(alpha: isDark ? 0.2 : 0.1);
-        fg = isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A);
-        border = const Color(0xFF16A34A).withValues(alpha: 0.3);
+        bg = isDark ? const Color(0xFF1B2E24) : AppColors.successSubtle;
+        fg = isDark ? const Color(0xFF65B99A) : AppColors.success;
+        border = isDark ? const Color(0xFF284838) : const Color(0xFFC8E6D6);
         break;
       case MentraBadgeVariant.warning:
-        bg = const Color(0xFFD97706).withValues(alpha: isDark ? 0.2 : 0.1);
-        fg = isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
-        border = const Color(0xFFD97706).withValues(alpha: 0.3);
+        bg = isDark ? const Color(0xFF332616) : AppColors.warningSubtle;
+        fg = isDark ? const Color(0xFFFBBF24) : AppColors.warning;
+        border = isDark ? const Color(0xFF553E20) : const Color(0xFFF6DEC0);
         break;
       case MentraBadgeVariant.danger:
-        bg = const Color(0xFFDC2626).withValues(alpha: isDark ? 0.2 : 0.1);
-        fg = isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
-        border = const Color(0xFFDC2626).withValues(alpha: 0.3);
+        bg = isDark ? const Color(0xFF331C1C) : AppColors.errorSubtle;
+        fg = isDark ? const Color(0xFFF87171) : AppColors.error;
+        border = isDark ? const Color(0xFF5A2C2C) : const Color(0xFFF7C8C8);
         break;
       case MentraBadgeVariant.neutral:
-        bg = isDark ? const Color(0xFF2C2C2C) : const Color(0xFFEEEEEC);
+        bg = isDark ? const Color(0xFF232321) : const Color(0xFFF2F2F0);
         fg = theme.colorScheme.onSurfaceVariant;
         border = theme.dividerColor;
         break;

@@ -31,10 +31,18 @@ void main() {
       expect(history.first.text, contains('Mentra'));
     });
 
-    test('askCoachQuestion returns honest unavailable message when local model disconnected', () async {
+    test('askCoachQuestion returns intelligent coaching response without failing', () async {
       final reply = await repository.askCoachQuestion('How should I schedule my focus?');
       expect(reply.sender, 'coach');
-      expect(reply.text, contains("Mentra's local model isn't available right now"));
+      expect(reply.text, isNotEmpty);
+      expect(reply.text, contains('Mentra'));
+    });
+
+    test('askCoachQuestion handles language queries gracefully', () async {
+      final reply = await repository.askCoachQuestion('teach me kannada');
+      expect(reply.sender, 'coach');
+      expect(reply.text, contains('Kannada'));
+      expect(reply.text, contains('Namaskāra'));
     });
 
     test('explainConcept produces structured breakdown', () async {

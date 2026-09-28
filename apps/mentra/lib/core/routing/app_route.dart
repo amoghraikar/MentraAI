@@ -8,6 +8,13 @@ enum AppRoute {
     activeIcon: Icons.home_rounded,
     group: NavGroup.workspace,
   ),
+  study(
+    path: '/study',
+    label: 'Study',
+    icon: Icons.auto_stories_outlined,
+    activeIcon: Icons.auto_stories_rounded,
+    group: NavGroup.workspace,
+  ),
   subjects(
     path: '/subjects',
     label: 'Subjects',
@@ -29,18 +36,25 @@ enum AppRoute {
     activeIcon: Icons.flag_rounded,
     group: NavGroup.workspace,
   ),
-  analytics(
-    path: '/analytics',
-    label: 'Analytics',
-    icon: Icons.insights_outlined,
-    activeIcon: Icons.insights_rounded,
-    group: NavGroup.insights,
-  ),
   aiCoach(
     path: '/ai-coach',
     label: 'Mentra AI',
     icon: Icons.psychology_outlined,
     activeIcon: Icons.psychology_rounded,
+    group: NavGroup.insights,
+  ),
+  focus(
+    path: '/focus',
+    label: 'Focus',
+    icon: Icons.center_focus_strong_outlined,
+    activeIcon: Icons.center_focus_strong_rounded,
+    group: NavGroup.insights,
+  ),
+  analytics(
+    path: '/analytics',
+    label: 'Analytics',
+    icon: Icons.insights_outlined,
+    activeIcon: Icons.insights_rounded,
     group: NavGroup.insights,
   ),
   settings(

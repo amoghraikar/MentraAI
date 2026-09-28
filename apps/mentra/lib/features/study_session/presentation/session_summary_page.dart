@@ -124,8 +124,9 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
                   Text(
                     'Great work, focus achieved.',
                     style: AppTypography.titleLarge.copyWith(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 26,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 24,
+                      letterSpacing: -0.5,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xxs),

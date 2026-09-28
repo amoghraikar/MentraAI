@@ -115,7 +115,11 @@ class _AiCoachPageState extends State<AiCoachPage> {
     if (text.isEmpty || _isGenerating) return;
 
     if (promptText == null) {
-      _queryController.clear();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _queryController.clear();
+        }
+      });
     }
 
     final userMsg = ChatMessage(
@@ -177,8 +181,35 @@ class _AiCoachPageState extends State<AiCoachPage> {
       _activeStreamSubscription = stream.listen(
         (chunk) {
           if (!mounted) return;
+          _currentStreamBuffer += chunk;
+
+          // Repetition loop detector: stop runaway loops if a model echoes the same line
+          final lines = _currentStreamBuffer.split('\n').map((l) => l.trim()).where((l) => l.length > 5).toList();
+          if (lines.length >= 2 && lines[lines.length - 1] == lines[lines.length - 2]) {
+            _activeStreamSubscription?.cancel();
+            // Remove the duplicate trailing line from buffer
+            final lastNewline = _currentStreamBuffer.lastIndexOf('\n');
+            if (lastNewline != -1) {
+              _currentStreamBuffer = _currentStreamBuffer.substring(0, lastNewline).trimRight();
+            }
+            setState(() {
+              _isGenerating = false;
+              final idx = _messages.indexWhere((m) => m.id == coachMsgId);
+              if (idx != -1) {
+                final cleaned = ChatMessage(
+                  id: coachMsgId,
+                  sender: 'coach',
+                  text: _currentStreamBuffer,
+                  timestamp: coachPlaceholder.timestamp,
+                );
+                _messages[idx] = cleaned;
+                _fullHistory.add(cleaned);
+              }
+            });
+            return;
+          }
+
           setState(() {
-            _currentStreamBuffer += chunk;
             final idx = _messages.indexWhere((m) => m.id == coachMsgId);
             if (idx != -1) {
               _messages[idx] = ChatMessage(
@@ -589,11 +620,11 @@ class _AiCoachPageState extends State<AiCoachPage> {
                     ),
                   ),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  backgroundColor: isDark ? const Color(0xFF1E1E22) : const Color(0xFFF1F5F9),
+                  backgroundColor: isDark ? const Color(0xFF232321) : const Color(0xFFF7F7F5),
                   side: BorderSide(
-                    color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
+                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
                   ),
-                  shape: RoundedRectangleBorder(borderRadius: AppRadius.borderMd),
+                  shape: const RoundedRectangleBorder(borderRadius: AppRadius.borderMd),
                   onPressed: () => _sendQuestion(prompt),
                 );
               }).toList(),
@@ -659,23 +690,27 @@ class _AiCoachPageState extends State<AiCoachPage> {
       mainAxisAlignment: MainAxisAlignment.end,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(width: 48),
+        const SizedBox(width: 64),
         Flexible(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 10),
             decoration: BoxDecoration(
-              color: AppColors.primary,
+              color: isDark ? const Color(0xFF232321) : const Color(0xFFEFEFEA),
               borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(16),
+                topLeft: const Radius.circular(10),
                 topRight: const Radius.circular(4),
-                bottomLeft: const Radius.circular(16),
-                bottomRight: const Radius.circular(16),
+                bottomLeft: const Radius.circular(10),
+                bottomRight: const Radius.circular(10),
+              ),
+              border: Border.all(
+                color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                width: 1,
               ),
             ),
             child: Text(
               msg.text,
               style: AppTypography.bodyMedium.copyWith(
-                color: Colors.white,
+                color: theme.colorScheme.onSurface,
                 height: 1.45,
               ),
             ),
@@ -799,10 +834,10 @@ class _AiCoachPageState extends State<AiCoachPage> {
                 },
                 child: Container(
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1E1E22) : const Color(0xFFF8FAFC),
+                    color: isDark ? const Color(0xFF232321) : const Color(0xFFFFFFFF),
                     borderRadius: AppRadius.borderMd,
                     border: Border.all(
-                      color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
+                      color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
                       width: 1,
                     ),
                   ),

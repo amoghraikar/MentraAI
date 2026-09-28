@@ -32,18 +32,52 @@ class AiCoachChatRequest(BaseModel):
     custom_system_prompt: Optional[str] = Field(None, description="Custom system instructions")
     custom_endpoint_url: Optional[str] = Field(None, description="Legacy field")
     attached_material_text: Optional[str] = Field(None, description="Optional study material pasted/attached with this prompt")
+    conversation_id: Optional[str] = Field(None, description="Active conversation identifier")
+    use_rag: bool = Field(True, description="Enable local RAG grounding if relevant documents exist")
 
 
 class AiCoachChatResponse(BaseModel):
     id: str
+    conversation_id: Optional[str] = None
     sender: str = "coach"
+    role: str = "assistant"
     message: str
     intent: Optional[str] = None
     mode: Optional[str] = None
     action: Optional[dict] = None
     action_suggestion: Optional[str] = None
     suggested_next_steps: List[str] = Field(default_factory=list)
+    sources: List[dict] = Field(default_factory=list, description="Retrieved local study document sources")
+    rag_status: Optional[str] = Field(None, description="RAG status: SUCCESS, NO_RELEVANT_CONTEXT, or NO_RAG")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class MessageResponse(BaseModel):
+    id: str
+    conversation_id: Optional[str] = None
+    role: str = "user"
+    content: str
+    created_at: datetime
+
+
+class ConversationCreateRequest(BaseModel):
+    title: Optional[str] = None
+
+
+class ConversationResponse(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+
+
+class ConversationDetailResponse(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    messages: List[MessageResponse] = Field(default_factory=list)
 
 
 class AiCoachConfigRequest(BaseModel):

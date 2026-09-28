@@ -17,38 +17,27 @@ class MentraAiAvatar extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 200),
       width: size,
       height: size,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isGenerating
-              ? [
-                  AppColors.primary,
-                  AppColors.accent,
-                ]
-              : [
-                  isDark ? const Color(0xFF2A2A2A) : const Color(0xFF1E293B),
-                  isDark ? const Color(0xFF181818) : const Color(0xFF0F172A),
-                ],
+        color: isGenerating
+            ? (isDark ? const Color(0xFF1B382E) : AppColors.primarySoft)
+            : (isDark ? const Color(0xFF232321) : const Color(0xFFF2F2F0)),
+        borderRadius: BorderRadius.circular(size * 0.28),
+        border: Border.all(
+          color: isGenerating
+              ? (isDark ? AppColors.primaryDark : AppColors.primary)
+              : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+          width: 1,
         ),
-        borderRadius: BorderRadius.circular(size * 0.3),
-        boxShadow: isGenerating
-            ? [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.4),
-                  blurRadius: 10,
-                  spreadRadius: 1,
-                ),
-              ]
-            : null,
       ),
       child: Center(
         child: Icon(
           Icons.psychology_rounded,
-          color: Colors.white,
+          color: isGenerating
+              ? (isDark ? AppColors.primaryDark : AppColors.primary)
+              : theme.colorScheme.onSurface,
           size: size * 0.55,
         ),
       ),

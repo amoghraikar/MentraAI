@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
@@ -8,6 +9,7 @@ enum MentraButtonVariant {
   secondary,
   outline,
   ghost,
+  danger,
 }
 
 class MentraButton extends StatefulWidget {
@@ -49,35 +51,45 @@ class _MentraButtonState extends State<MentraButton> {
     switch (widget.variant) {
       case MentraButtonVariant.primary:
         backgroundColor = _isHovered
-            ? (isDark ? const Color(0xFF2563EB) : const Color(0xFF1D4ED8))
-            : theme.colorScheme.primary;
-        foregroundColor = Colors.white;
+            ? (isDark ? const Color(0xFF52A385) : AppColors.primaryHover)
+            : (isDark ? AppColors.primaryDark : AppColors.primary);
+        foregroundColor = isDark ? const Color(0xFF142420) : Colors.white;
         border = null;
         break;
       case MentraButtonVariant.secondary:
         backgroundColor = _isHovered
-            ? (isDark ? const Color(0xFF2C2C2C) : const Color(0xFFE8E8E6))
-            : (isDark ? const Color(0xFF222222) : const Color(0xFFF0F0EE));
+            ? (isDark ? const Color(0xFF292927) : const Color(0xFFEFEFEA))
+            : (isDark ? const Color(0xFF232321) : const Color(0xFFFFFFFF));
         foregroundColor = theme.colorScheme.onSurface;
-        border = null;
+        border = Border.all(
+          color: _isHovered
+              ? (isDark ? AppColors.darkBorderStrong : AppColors.lightBorderStrong)
+              : theme.dividerColor,
+          width: 1,
+        );
         break;
       case MentraButtonVariant.outline:
         backgroundColor = _isHovered
-            ? (isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F3))
+            ? (isDark ? const Color(0xFF292927) : const Color(0xFFF7F7F5))
             : Colors.transparent;
         foregroundColor = theme.colorScheme.onSurface;
         border = Border.all(
           color: _isHovered
-              ? (isDark ? const Color(0xFF444444) : const Color(0xFFCCCCCC))
+              ? (isDark ? AppColors.darkBorderStrong : AppColors.lightBorderStrong)
               : theme.dividerColor,
           width: 1,
         );
         break;
       case MentraButtonVariant.ghost:
         backgroundColor = _isHovered
-            ? (isDark ? const Color(0xFF262626) : const Color(0xFFF2F2F0))
+            ? (isDark ? const Color(0xFF292927) : const Color(0xFFEFEFEA))
             : Colors.transparent;
         foregroundColor = theme.colorScheme.onSurfaceVariant;
+        border = null;
+        break;
+      case MentraButtonVariant.danger:
+        backgroundColor = _isHovered ? const Color(0xFFBA3838) : AppColors.error;
+        foregroundColor = Colors.white;
         border = null;
         break;
     }

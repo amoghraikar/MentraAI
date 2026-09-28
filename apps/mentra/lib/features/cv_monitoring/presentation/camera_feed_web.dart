@@ -12,6 +12,9 @@ class CameraFeedWebHelper {
     try {
       final host = html.window.location.hostname;
       if (host != null && host.isNotEmpty) {
+        if (host == 'localhost') {
+          return 'http://127.0.0.1:8000/api/v1/cv';
+        }
         return 'http://$host:8000/api/v1/cv';
       }
     } catch (_) {}

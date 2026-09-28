@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from typing import AsyncGenerator, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from app.models.ai_coach import CoachMessage, CoachInsight
+from app.models.ai_coach import CoachMessage, CoachInsight, Conversation
+from app.services.ai.conversation_manager import conversation_manager, ConversationManager
 from app.models.subject import Subject
 from app.models.topic import Topic
 from app.schemas.ai_coach import (
@@ -26,8 +27,6 @@ from app.services.ai.coach_identity import (
     INTENT_GUIDANCE_RULES,
 )
 from app.services.ai.context_builder import CoachContextBuilder, ContextBuilder
-from app.services.ai.mentra_context import MentraContext
-from app.services.ai.conversation_engine import ConversationEngine
 from app.services.ai.decision_engine import CoachingDecisionEngine
 from app.services.ai.document_service import document_service
 from app.services.ai.prompts import (
@@ -37,28 +36,29 @@ from app.services.ai.prompts import (
     POST_SESSION_PROMPT,
     STUDY_PLAN_PROMPT,
     build_coaching_system_prompt,
-    MEXTRA_SYSTEM_PROMPT_LAYER,
 )
 from app.schemas.ai_coach import LocalLLMStatusResponse
 from app.services.ai.local_llm import (
     local_llm_engine,
-    ModelState,
-    LocalLLMError,
     LocalLLM,
     MENTRA_SYSTEM_PROMPT,
 )
 from app.services.ai.providers import (
     AiProviderFactory,
     BaseAiProvider,
-    LocalLLMProvider,
-    DynamicCognitiveAiProvider,
 )
 
 
 class AiCoachService:
-    def __init__(self, provider: Optional[BaseAiProvider] = None, local_llm: Optional[LocalLLM] = None):
+    def __init__(
+        self,
+        provider: Optional[BaseAiProvider] = None,
+        local_llm: Optional[LocalLLM] = None,
+        conv_manager: Optional[ConversationManager] = None,
+    ):
         self.local_llm = local_llm or local_llm_engine
         self.provider = provider or AiProviderFactory.get_provider()
+        self.conv_manager = conv_manager or conversation_manager
 
     def get_config(self) -> AiCoachConfigResponse:
         return AiCoachConfigResponse(
@@ -85,7 +85,22 @@ class AiCoachService:
         )
 
     async def cancel_chat(self) -> None:
-        await self.local_llm.cancel()
+        await self.conv_manager.cancel_generation()
+
+    def create_conversation(self, db: Session, user_id: str, title: Optional[str] = None) -> Conversation:
+        return self.conv_manager.create_conversation(db=db, user_id=user_id, title=title)
+
+    def list_conversations(self, db: Session, user_id: str, limit: int = 50) -> List[Conversation]:
+        return self.conv_manager.list_conversations(db=db, user_id=user_id, limit=limit)
+
+    def get_conversation(self, db: Session, conversation_id: str, user_id: str) -> Optional[Conversation]:
+        return self.conv_manager.load_conversation(db=db, conversation_id=conversation_id, user_id=user_id)
+
+    def delete_conversation(self, db: Session, conversation_id: str, user_id: str) -> bool:
+        return self.conv_manager.delete_conversation(db=db, conversation_id=conversation_id, user_id=user_id)
+
+    def clear_conversation(self, db: Session, conversation_id: str, user_id: str) -> bool:
+        return self.conv_manager.clear_conversation(db=db, conversation_id=conversation_id, user_id=user_id)
 
     def set_provider(self, provider: BaseAiProvider) -> None:
         self.provider = provider
@@ -114,131 +129,55 @@ class AiCoachService:
         user_id: str,
         request: AiCoachChatRequest,
     ) -> AiCoachChatResponse:
-        # 1. Select provider (custom or default)
-        active_provider = self.provider
-        if request.provider or request.api_key or request.model or request.custom_endpoint_url:
-            active_provider = AiProviderFactory.get_provider(
-                provider_name=request.provider,
-                api_key=request.api_key,
-                model=request.model,
-                base_url=request.custom_endpoint_url,
-            )
-
-        # 2. Ingest attached material if provided directly in the request
-        if request.attached_material_text and request.attached_material_text.strip():
-            document_service.ingest_material(
-                title="Attached Study Note",
-                content=request.attached_material_text.strip(),
-            )
-
-        # 3. Retrieve relevant study material context
-        retrieved_material = document_service.retrieve_relevant_context(request.message) if request.attached_material_text else ""
-
-        # 4. Build verified study context and synthesize prompt via ConversationEngine
-        mentra_context = MentraContext.create_from_db_and_session(
-            db=db,
-            user_id=user_id,
-            subject_id=request.subject_id,
-            topic_id=request.topic_id,
-            active_session_id=request.active_session_id,
-            subject_title=request.subject_title,
-            topic_title=request.topic_title,
-            study_goal=request.study_goal,
-            elapsed_minutes=request.elapsed_minutes,
-            target_duration_minutes=request.target_duration_minutes,
-            is_session_active=request.is_session_active,
-            focus_score=request.focus_score,
-            history=[{"role": item.role, "content": item.content} for item in request.history],
-            current_message=request.message,
-        )
-
-        system_prompt, chat_messages = ConversationEngine.prepare_llm_payload(
-            current_message=request.message,
-            history=[{"role": item.role, "content": item.content} for item in request.history],
-            context=mentra_context,
-            custom_system_prompt=request.custom_system_prompt,
-        )
-
-        if retrieved_material:
-            system_prompt = (
-                f"{system_prompt}\n\n"
-                f"===================================================\n"
-                f"[GROUNDING STUDY MATERIAL & SOURCE TEXT EXCERPTS]:\n"
-                f"{retrieved_material}\n"
-                f"===================================================\n"
-                f"CRITICAL INSTRUCTION: Synthesize your answer accurately using the study material excerpts above."
-            )
-
-        # 5. Analyze interaction with Coaching Decision Layer
-        intent, mode, action, suggested_steps = CoachingDecisionEngine.analyze_interaction(
-            message=request.message,
-            history=chat_messages,
-            context=mentra_context.__dict__,
-        )
-
-        # 9. Persist user message
-        user_msg = CoachMessage(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            sender="user",
-            message=request.message,
-            mode="chat",
-        )
-        db.add(user_msg)
-
-        # 10. Generate response from the selected LLM provider with safe diagnostic logging
         import time
         import logging
         ai_logger = logging.getLogger("mentra.ai")
-
-        provider_name = type(active_provider).__name__.replace("Provider", "")
-        model_name = getattr(active_provider, "model", "qwen2.5:0.5b")
-
-        ai_logger.info(f"[MENTRA AI] request started")
-        ai_logger.info(f"[MENTRA AI] provider = {provider_name}")
-        ai_logger.info(f"[MENTRA AI] model = {model_name}")
-        ai_logger.info(f"[MENTRA AI] request sent")
-
         start_time = time.time()
+
+        ai_logger.info(f"[MENTRA AI] request started for user={user_id} conv={request.conversation_id}")
+
         try:
-            response_text = await self.local_llm.generate(
-                messages=chat_messages,
-                system_prompt=system_prompt,
+            gen_result = await self.conv_manager.generate_response(
+                db=db,
+                user_id=user_id,
+                current_message=request.message,
+                conversation_id=request.conversation_id,
+                system_prompt=request.custom_system_prompt,
                 temperature=0.7,
+                use_rag=getattr(request, "use_rag", True),
             )
+            response_text, conv, asst_msg = gen_result[0], gen_result[1], gen_result[2]
+            sources = getattr(gen_result, "sources", [])
+            rag_status = getattr(gen_result, "rag_status", "NO_RAG")
             latency_ms = int((time.time() - start_time) * 1000)
-            ai_logger.info(f"[MENTRA AI] response received")
-            ai_logger.info(f"[MENTRA AI] status = 200 OK")
-            ai_logger.info(f"[MENTRA AI] latency = {latency_ms}ms")
+            ai_logger.info(f"[MENTRA AI] response received, status=200 OK, latency={latency_ms}ms, conv={conv.id}, sources={len(sources)}")
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
             ai_logger.error(f"[MENTRA AI] local model generation failed after {latency_ms}ms: {e}")
             raise
 
-        # 11. Persist coach response
-        coach_msg_id = str(uuid.uuid4())
-        coach_msg = CoachMessage(
-            id=coach_msg_id,
-            user_id=user_id,
-            sender="coach",
-            message=response_text,
-            mode="chat",
+        # Pedagogical intent analysis for UI action suggestions
+        intent, mode, action, suggested_steps = CoachingDecisionEngine.analyze_interaction(
+            message=request.message,
+            history=[{"role": "user", "content": request.message}],
+            context={},
         )
-        db.add(coach_msg)
-        db.commit()
-
         action_suggestion = action.get("type") if action else ("Start Active Practice" if mode == "QUIZ" else None)
 
         return AiCoachChatResponse(
-            id=coach_msg_id,
+            id=asst_msg.id,
+            conversation_id=conv.id,
             sender="coach",
+            role="assistant",
             message=response_text,
             intent=intent,
             mode=mode,
             action=action,
             action_suggestion=action_suggestion,
             suggested_next_steps=suggested_steps,
-            timestamp=datetime.now(timezone.utc),
+            sources=sources,
+            rag_status=rag_status,
+            timestamp=asst_msg.created_at or datetime.now(timezone.utc),
         )
 
     async def stream_chat(
@@ -248,73 +187,20 @@ class AiCoachService:
         request: AiCoachChatRequest,
     ) -> AsyncGenerator[str, None]:
         import json
+        import logging
+        ai_logger = logging.getLogger("mentra.ai")
+        ai_logger.info(f"[MENTRA AI] stream request started for user={user_id} conv={request.conversation_id}")
 
-        mentra_context = MentraContext.create_from_db_and_session(
+        async for event in self.conv_manager.stream_response(
             db=db,
             user_id=user_id,
-            subject_id=request.subject_id,
-            topic_id=request.topic_id,
-            active_session_id=request.active_session_id,
-            subject_title=request.subject_title,
-            topic_title=request.topic_title,
-            study_goal=request.study_goal,
-            elapsed_minutes=request.elapsed_minutes,
-            target_duration_minutes=request.target_duration_minutes,
-            is_session_active=request.is_session_active,
-            focus_score=request.focus_score,
-            history=[{"role": item.role, "content": item.content} for item in request.history],
             current_message=request.message,
-        )
-
-        system_prompt, chat_messages = ConversationEngine.prepare_llm_payload(
-            current_message=request.message,
-            history=[{"role": item.role, "content": item.content} for item in request.history],
-            context=mentra_context,
-            custom_system_prompt=request.custom_system_prompt,
-        )
-
-        user_msg = CoachMessage(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            sender="user",
-            message=request.message,
-            mode="chat",
-        )
-        db.add(user_msg)
-        db.commit()
-
-        coach_msg_id = str(uuid.uuid4())
-        tokens: List[str] = []
-
-        try:
-            async for chunk in self.local_llm.stream(
-                messages=chat_messages,
-                system_prompt=system_prompt,
-                temperature=0.7,
-            ):
-                tokens.append(chunk)
-                yield f"data: {json.dumps({'chunk': chunk, 'done': False})}\n\n"
-
-            complete_text = "".join(tokens).strip()
-            if not complete_text:
-                raise RuntimeError("Empty stream from local LLM")
-
-            coach_msg = CoachMessage(
-                id=coach_msg_id,
-                user_id=user_id,
-                sender="coach",
-                message=complete_text,
-                mode="chat",
-            )
-            db.add(coach_msg)
-            db.commit()
-
-            yield f"data: {json.dumps({'chunk': '', 'done': True, 'id': coach_msg_id, 'message': complete_text})}\n\n"
-        except Exception as e:
-            ai_logger = logging.getLogger("mentra.ai")
-            ai_logger.error(f"[MENTRA AI] local model stream error: {e}")
-            err_msg = "Mentra's local model isn't available right now. Please ensure the local AI service is running."
-            yield f"data: {json.dumps({'error': err_msg, 'chunk': '', 'done': True, 'id': coach_msg_id})}\n\n"
+            conversation_id=request.conversation_id,
+            system_prompt=request.custom_system_prompt,
+            temperature=0.7,
+            use_rag=getattr(request, "use_rag", True),
+        ):
+            yield f"data: {json.dumps(event)}\n\n"
 
     async def explain_concept(
         self,
@@ -343,18 +229,11 @@ class AiCoachService:
             notes_context=f"Student Notes: {request.student_notes_context}" if request.student_notes_context else "",
         )
 
-        try:
-            return await self.provider.generate_structured(
-                prompt=prompt,
-                system_prompt=COACH_SYSTEM_PROMPT,
-                response_model=AiCoachExplainResponse,
-            )
-        except Exception:
-            return await DynamicCognitiveAiProvider().generate_structured(
-                prompt=prompt,
-                system_prompt=COACH_SYSTEM_PROMPT,
-                response_model=AiCoachExplainResponse,
-            )
+        return await self.provider.generate_structured(
+            prompt=prompt,
+            system_prompt=COACH_SYSTEM_PROMPT,
+            response_model=AiCoachExplainResponse,
+        )
 
     async def evaluate_intervention(
         self,
@@ -370,18 +249,11 @@ class AiCoachService:
             trigger_reason=request.trigger_reason,
         )
 
-        try:
-            return await self.provider.generate_structured(
-                prompt=prompt,
-                system_prompt=COACH_SYSTEM_PROMPT,
-                response_model=AiCoachInterventionResponse,
-            )
-        except Exception:
-            return await DynamicCognitiveAiProvider().generate_structured(
-                prompt=prompt,
-                system_prompt=COACH_SYSTEM_PROMPT,
-                response_model=AiCoachInterventionResponse,
-            )
+        return await self.provider.generate_structured(
+            prompt=prompt,
+            system_prompt=COACH_SYSTEM_PROMPT,
+            response_model=AiCoachInterventionResponse,
+        )
 
     async def analyze_session(
         self,
@@ -399,18 +271,11 @@ class AiCoachService:
             reflection=request.reflection,
         )
 
-        try:
-            analysis = await self.provider.generate_structured(
-                prompt=prompt,
-                system_prompt=COACH_SYSTEM_PROMPT,
-                response_model=AiCoachSessionAnalysisResponse,
-            )
-        except Exception:
-            analysis = await DynamicCognitiveAiProvider().generate_structured(
-                prompt=prompt,
-                system_prompt=COACH_SYSTEM_PROMPT,
-                response_model=AiCoachSessionAnalysisResponse,
-            )
+        analysis = await self.provider.generate_structured(
+            prompt=prompt,
+            system_prompt=COACH_SYSTEM_PROMPT,
+            response_model=AiCoachSessionAnalysisResponse,
+        )
         analysis.session_id = request.session_id
         return analysis
 
@@ -434,18 +299,11 @@ class AiCoachService:
             topics_list=topics_str,
         )
 
-        try:
-            return await self.provider.generate_structured(
-                prompt=prompt,
-                system_prompt=COACH_SYSTEM_PROMPT,
-                response_model=AiCoachStudyPlanResponse,
-            )
-        except Exception:
-            return await DynamicCognitiveAiProvider().generate_structured(
-                prompt=prompt,
-                system_prompt=COACH_SYSTEM_PROMPT,
-                response_model=AiCoachStudyPlanResponse,
-            )
+        return await self.provider.generate_structured(
+            prompt=prompt,
+            system_prompt=COACH_SYSTEM_PROMPT,
+            response_model=AiCoachStudyPlanResponse,
+        )
 
     def get_insights(
         self,
@@ -468,12 +326,15 @@ class AiCoachService:
         self,
         db: Session,
         user_id: str,
+        conversation_id: Optional[str] = None,
     ) -> List[AiCoachChatResponse]:
+        query = db.query(CoachMessage).filter(CoachMessage.user_id == user_id)
+        if conversation_id:
+            query = query.filter(CoachMessage.conversation_id == conversation_id)
         messages = (
-            db.query(CoachMessage)
-            .filter(CoachMessage.user_id == user_id)
+            query
             .order_by(CoachMessage.created_at)
-            .limit(20)
+            .limit(50)
             .all()
         )
 
@@ -481,9 +342,11 @@ class AiCoachService:
             return [
                 AiCoachChatResponse(
                     id=m.id,
-                    sender=m.sender,
+                    conversation_id=m.conversation_id,
+                    sender=m.sender or "coach",
+                    role=m.role or ("assistant" if m.sender == "coach" else "user"),
                     message=m.message,
-                    timestamp=m.created_at,
+                    timestamp=m.created_at or datetime.now(timezone.utc),
                 )
                 for m in messages
             ]
@@ -491,9 +354,11 @@ class AiCoachService:
         return [
             AiCoachChatResponse(
                 id="msg_init",
+                conversation_id=conversation_id,
                 sender="coach",
+                role="assistant",
                 message="Hello! I'm Mentra, your AI Study Coach. How can I help you optimize your study session or break down a difficult concept today?",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
             )
         ]
 

@@ -275,4 +275,4 @@ async def test_ai_coach_service_chat_ingests_session_fields(test_db):
 
     resp = await service.chat(db=test_db, user_id="user_test_m5", request=req)
     assert resp.sender == "coach"
-    assert "Virtual Memory" in resp.message or "paging" in resp.message
+    assert "Virtual Memory" in resp.message or "paging" in resp.message.lower()

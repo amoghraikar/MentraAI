@@ -1,5 +1,5 @@
-from typing import List
-from fastapi import APIRouter, Depends, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.core.dependencies import get_current_user, get_current_user_or_local, get_db
@@ -18,7 +18,11 @@ from app.schemas.ai_coach import (
     AiCoachStudyPlanRequest,
     AiCoachStudyPlanResponse,
     CoachInsightResponse,
+    ConversationCreateRequest,
+    ConversationDetailResponse,
+    ConversationResponse,
     LocalLLMStatusResponse,
+    MessageResponse,
     StudyMaterialUploadRequest,
     StudyMaterialUploadResponse,
     TestKeyRequest,
@@ -144,12 +148,99 @@ async def ask_coach(
     return await ai_coach_service.chat(db=db, user_id=current_user.id, request=request)
 
 
+@router.get("/conversations", response_model=List[ConversationResponse], status_code=status.HTTP_200_OK)
+def list_conversations(
+    current_user: User = Depends(get_current_user_or_local),
+    db: Session = Depends(get_db),
+) -> List[ConversationResponse]:
+    convs = ai_coach_service.list_conversations(db=db, user_id=current_user.id)
+    return [
+        ConversationResponse(
+            id=c.id,
+            title=c.title,
+            created_at=c.created_at,
+            updated_at=c.updated_at,
+            message_count=len(c.messages) if c.messages else 0,
+        )
+        for c in convs
+    ]
+
+
+@router.post("/conversations", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
+def create_conversation(
+    request: ConversationCreateRequest,
+    current_user: User = Depends(get_current_user_or_local),
+    db: Session = Depends(get_db),
+) -> ConversationResponse:
+    conv = ai_coach_service.create_conversation(db=db, user_id=current_user.id, title=request.title)
+    return ConversationResponse(
+        id=conv.id,
+        title=conv.title,
+        created_at=conv.created_at,
+        updated_at=conv.updated_at,
+        message_count=0,
+    )
+
+
+@router.get("/conversations/{conversation_id}", response_model=ConversationDetailResponse, status_code=status.HTTP_200_OK)
+def get_conversation_details(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user_or_local),
+    db: Session = Depends(get_db),
+) -> ConversationDetailResponse:
+    conv = ai_coach_service.get_conversation(db=db, conversation_id=conversation_id, user_id=current_user.id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    messages = ai_coach_service.conv_manager.get_messages(db=db, conversation_id=conversation_id, user_id=current_user.id)
+    return ConversationDetailResponse(
+        id=conv.id,
+        title=conv.title,
+        created_at=conv.created_at,
+        updated_at=conv.updated_at,
+        messages=[
+            MessageResponse(
+                id=m.id,
+                conversation_id=m.conversation_id,
+                role=m.role or ("assistant" if m.sender == "coach" else "user"),
+                content=m.content,
+                created_at=m.created_at,
+            )
+            for m in messages
+        ],
+    )
+
+
+@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_200_OK)
+def delete_conversation(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user_or_local),
+    db: Session = Depends(get_db),
+) -> dict:
+    success = ai_coach_service.delete_conversation(db=db, conversation_id=conversation_id, user_id=current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"message": "Conversation deleted successfully", "conversation_id": conversation_id}
+
+
+@router.delete("/conversations/{conversation_id}/messages", status_code=status.HTTP_200_OK)
+def clear_conversation(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user_or_local),
+    db: Session = Depends(get_db),
+) -> dict:
+    success = ai_coach_service.clear_conversation(db=db, conversation_id=conversation_id, user_id=current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"message": "Conversation messages cleared successfully", "conversation_id": conversation_id}
+
+
 @router.get("/chat", response_model=List[AiCoachChatResponse], status_code=status.HTTP_200_OK)
 def get_chat_history(
+    conversation_id: Optional[str] = Query(None, description="Optional conversation ID to filter messages"),
     current_user: User = Depends(get_current_user_or_local),
     db: Session = Depends(get_db),
 ) -> List[AiCoachChatResponse]:
-    return ai_coach_service.get_chat_history(db=db, user_id=current_user.id)
+    return ai_coach_service.get_chat_history(db=db, user_id=current_user.id, conversation_id=conversation_id)
 
 
 @router.delete("/chat", status_code=status.HTTP_200_OK)

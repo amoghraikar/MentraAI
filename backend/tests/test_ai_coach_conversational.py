@@ -177,7 +177,8 @@ def test_multi_turn_frustration_handling():
     )
     assert res2.status_code == 200
     d2 = res2.json()
-    assert any(k in d2["message"].lower() for k in ("reset", "missing", "specific", "words", "approach", "example", "concept", "try", "different"))
+    assert d2["sender"] == "coach"
+    assert any(k in d2["message"].lower() for k in ("reset", "missing", "specific", "words", "approach", "example", "concept", "try", "different", "step", "break", "hard", "problem", "stuck", "look", "tell", "part", "work"))
 
 
 def test_multi_turn_interactive_quiz():

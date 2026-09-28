@@ -75,6 +75,8 @@ class LocalLLM:
     def is_ready(self) -> bool:
         return self._state == ModelState.READY
 
+    isReady = is_ready
+
     def get_state(self) -> ModelState:
         return self._state
 
@@ -117,6 +119,8 @@ class LocalLLM:
             pass
 
         return info
+
+    getModelInfo = get_model_info
 
     async def initialize(self) -> None:
         """Initialize and verify connection to the local model runtime."""
@@ -218,6 +222,7 @@ class LocalLLM:
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 1500,
+        format: Optional[str] = None,
     ) -> str:
         """Generate a complete text response from the local model."""
         if not messages:
@@ -261,8 +266,14 @@ class LocalLLM:
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
+                "repeat_penalty": 1.35,
+                "repeat_last_n": 256,
+                "top_k": 40,
+                "top_p": 0.9,
             },
         }
+        if format:
+            payload["format"] = format
 
         last_exc: Optional[Exception] = None
         try:
@@ -383,6 +394,10 @@ class LocalLLM:
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
+                "repeat_penalty": 1.35,
+                "repeat_last_n": 256,
+                "top_k": 40,
+                "top_p": 0.9,
             },
         }
 
@@ -396,6 +411,7 @@ class LocalLLM:
                             LocalLLMErrorCode.GENERATION_FAILED,
                             f"Streaming error HTTP {response.status_code}: {err_text.decode('utf-8', 'ignore')}",
                         )
+                    buffer_history = ""
                     async for line in response.aiter_lines():
                         if self._cancel_requested:
                             break
@@ -405,6 +421,13 @@ class LocalLLM:
                             chunk = json.loads(line)
                             content = chunk.get("message", {}).get("content", "")
                             if content:
+                                buffer_history += content
+                                # Loop breaker: detect if the model begins repeating identical lines/phrases
+                                recent_lines = [l.strip() for l in buffer_history.split("\n") if len(l.strip()) > 5]
+                                if len(recent_lines) >= 2 and recent_lines[-1] == recent_lines[-2]:
+                                    logger.warning("LocalLLM: Repetition loop detected for '%s' — breaking stream.", recent_lines[-1][:40])
+                                    break
+
                                 yield content
                             if chunk.get("done", False):
                                 break

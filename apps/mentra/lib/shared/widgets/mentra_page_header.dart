@@ -33,6 +33,9 @@ class MentraPageHeader extends StatelessWidget {
                   Text(
                     title,
                     style: AppTypography.displayMedium.copyWith(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.6,
                       color: theme.colorScheme.onSurface,
                     ),
                   ),

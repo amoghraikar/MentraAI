@@ -3,6 +3,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_radius.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/formatters.dart';
 import '../../domain/models/coach_insight.dart';
 
 class ChatHistoryDrawer extends StatelessWidget {
@@ -187,12 +188,5 @@ class ChatHistoryDrawer extends StatelessWidget {
     );
   }
 
-  String _formatTimestamp(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    return '${dt.month}/${dt.day}';
-  }
+  String _formatTimestamp(DateTime dt) => Formatters.formatRelativeTime(dt);
 }

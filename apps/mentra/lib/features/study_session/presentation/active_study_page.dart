@@ -3,6 +3,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../shared/dialogs/mentra_dialogs.dart';
 import '../../../shared/widgets/mentra_badge.dart';
 import '../../../shared/widgets/mentra_button.dart';
@@ -467,6 +468,10 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
                     statusText = 'Monitoring';
                     statusColor = Colors.lightBlueAccent;
                     break;
+                  case 'BACKEND_OFFLINE':
+                    statusText = 'CV Backend Offline';
+                    statusColor = Colors.redAccent;
+                    break;
                   case 'CAMERA_ERROR':
                     statusText = 'Camera Error';
                     statusColor = Colors.redAccent;
@@ -713,10 +718,7 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
     required double durationSec,
     required Color color,
   }) {
-    final s = durationSec.toInt();
-    final m = s ~/ 60;
-    final r = s % 60;
-    final durStr = '${m}m ${r.toString().padLeft(2, "0")}s';
+    final durStr = Formatters.formatDurationMinutesSeconds(durationSec);
 
     return Row(
       mainAxisSize: MainAxisSize.min,

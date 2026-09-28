@@ -9,6 +9,7 @@ import '../../cv_monitoring/presentation/camera_feed_stub.dart'
 import '../domain/models/session_config.dart';
 import '../domain/models/study_session_record.dart';
 import '../domain/repositories/session_repository.dart';
+import '../../../../core/utils/formatters.dart';
 
 enum SessionState {
   idle,
@@ -215,19 +216,9 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     return (elapsedSeconds / _targetSeconds).clamp(0.0, 1.0);
   }
 
-  String get formattedRemainingTime {
-    final s = remainingSeconds;
-    final m = s ~/ 60;
-    final sec = s % 60;
-    return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
-  }
+  String get formattedRemainingTime => Formatters.formatTimer(remainingSeconds);
 
-  String get formattedElapsedTime {
-    final s = elapsedSeconds;
-    final m = s ~/ 60;
-    final sec = s % 60;
-    return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
-  }
+  String get formattedElapsedTime => Formatters.formatTimer(elapsedSeconds);
 
   /// Setup a new study session from idle or completed state.
   bool setupSession(SessionConfig config) {

@@ -110,7 +110,10 @@ class _TopicViewPageState extends State<TopicViewPage> {
               const SizedBox(height: AppSpacing.sm),
               Text(
                 topic.title,
-                style: AppTypography.displayMedium.copyWith(fontWeight: FontWeight.w800),
+                style: AppTypography.headlineMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.5,
+                ),
               ),
               const SizedBox(height: AppSpacing.xxs),
               Text(

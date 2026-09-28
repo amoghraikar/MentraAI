@@ -3,6 +3,15 @@ import 'package:flutter/material.dart';
 /// Standard typography hierarchy for Mentra.
 abstract class AppTypography {
   static const String fontFamily = 'Inter';
+  static const List<String> fontFamilyFallback = [
+    'Inter',
+    '-apple-system',
+    'BlinkMacSystemFont',
+    'Segoe UI',
+    'Roboto',
+    'Helvetica Neue',
+    'sans-serif',
+  ];
 
   static const TextStyle displayLarge = TextStyle(
     fontSize: 32,
@@ -16,6 +25,15 @@ abstract class AppTypography {
     fontWeight: FontWeight.w700,
     letterSpacing: -0.6,
     height: 1.25,
+  );
+
+  static const TextStyle headlineLarge = displayLarge;
+  static const TextStyle headlineMedium = displayMedium;
+  static const TextStyle headlineSmall = TextStyle(
+    fontSize: 22,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.4,
+    height: 1.3,
   );
 
   static const TextStyle titleLarge = TextStyle(

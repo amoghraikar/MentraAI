@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/mentra_badge.dart';
 import '../../../shared/widgets/mentra_button.dart';
 import '../../../shared/widgets/mentra_card.dart';
@@ -265,10 +266,5 @@ class _NotesPageState extends State<NotesPage> {
     );
   }
 
-  String _formatDate(DateTime dt) {
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    return '${diff.inDays}d ago';
-  }
+  String _formatDate(DateTime dt) => Formatters.formatRelativeTime(dt);
 }

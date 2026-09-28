@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/network/api_client.dart';
 import '../../core/routing/app_route.dart';
 import '../../core/routing/app_router.dart';
@@ -10,6 +11,7 @@ import '../../features/analytics/data/repositories/api_analytics_repository.dart
 import '../../features/analytics/domain/repositories/analytics_repository.dart';
 import '../../features/analytics/presentation/analytics_page.dart';
 import '../../features/auth/services/token_storage_service.dart';
+import '../../features/cv_monitoring/presentation/focus_workspace_page.dart';
 import '../../features/goals/data/repositories/api_goal_repository.dart';
 import '../../features/goals/domain/repositories/goal_repository.dart';
 import '../../features/goals/presentation/goals_page.dart';
@@ -37,7 +39,9 @@ import '../../features/notes/data/repositories/mock_note_repository.dart';
 import '../../features/analytics/data/repositories/mock_analytics_repository.dart';
 import '../../features/study_session/data/repositories/mock_session_repository.dart';
 import '../../features/subjects/data/repositories/mock_subject_repository.dart';
+import '../widgets/command_palette_dialog.dart';
 import '../widgets/mentra_sidebar.dart';
+import '../widgets/workspace_top_bar.dart';
 
 class WorkspaceLayout extends StatefulWidget {
   const WorkspaceLayout({
@@ -62,6 +66,7 @@ class WorkspaceLayout extends StatefulWidget {
 }
 
 class _WorkspaceLayoutState extends State<WorkspaceLayout> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   late final SubjectRepository _subjectRepo;
   late final NoteRepository _noteRepo;
   late final GoalRepository _goalRepo;
@@ -73,6 +78,7 @@ class _WorkspaceLayoutState extends State<WorkspaceLayout> {
   // Sub-route state
   SubjectModel? _selectedSubject;
   TopicModel? _selectedTopic;
+  bool _isSidebarCollapsed = false;
 
   @override
   void initState() {
@@ -126,6 +132,18 @@ class _WorkspaceLayoutState extends State<WorkspaceLayout> {
     );
   }
 
+  List<String>? _getBreadcrumbs(AppRoute route) {
+    if (route == AppRoute.subjects || route == AppRoute.study) {
+      if (_selectedTopic != null && _selectedSubject != null) {
+        return ['Study', _selectedSubject!.title, _selectedTopic!.title];
+      } else if (_selectedSubject != null) {
+        return ['Study', _selectedSubject!.title];
+      }
+      return ['Study', 'Subjects'];
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     // 1. If in Study Session Flow, show dedicated fullscreen views
@@ -155,22 +173,71 @@ class _WorkspaceLayoutState extends State<WorkspaceLayout> {
     }
 
     final nav = NavigationScope.of(context);
+    final isMobile = MediaQuery.of(context).size.width < 768;
 
-    return Scaffold(
-      body: Row(
-        children: [
-          // Fixed Desktop Sidebar
-          MentraSidebar(
+    final sidebarWidget = MentraSidebar(
+      onStartStudySession: () => _openStudySetup(),
+      isCollapsed: _isSidebarCollapsed,
+      onToggleCollapse: () {
+        setState(() {
+          _isSidebarCollapsed = !_isSidebarCollapsed;
+        });
+      },
+    );
+
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () {
+          CommandPaletteDialog.show(
+            context,
             onStartStudySession: () => _openStudySetup(),
-          ),
+          );
+        },
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
+          CommandPaletteDialog.show(
+            context,
+            onStartStudySession: () => _openStudySetup(),
+          );
+        },
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        drawer: isMobile ? Drawer(child: sidebarWidget) : null,
+        body: Row(
+          children: [
+            // Fixed Desktop Sidebar
+            if (!isMobile) sidebarWidget,
 
-          // Main Workspace Viewport
-          Expanded(
-            child: FocusTraversalGroup(
-              child: _buildCurrentWorkspace(nav.currentRoute),
+            // Main Workspace Viewport with Persistent Top Bar
+            Expanded(
+              child: Column(
+                children: [
+                  WorkspaceTopBar(
+                    currentRoute: nav.currentRoute,
+                    sessionController: _sessionController,
+                    breadcrumbs: _getBreadcrumbs(nav.currentRoute),
+                    onStartStudySession: () => _openStudySetup(),
+                    isSidebarCollapsed: _isSidebarCollapsed,
+                    onToggleSidebar: () {
+                      if (isMobile) {
+                        _scaffoldKey.currentState?.openDrawer();
+                      } else {
+                        setState(() {
+                          _isSidebarCollapsed = !_isSidebarCollapsed;
+                        });
+                      }
+                    },
+                  ),
+                  Expanded(
+                    child: FocusTraversalGroup(
+                      child: _buildCurrentWorkspace(nav.currentRoute),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -178,13 +245,15 @@ class _WorkspaceLayoutState extends State<WorkspaceLayout> {
   Widget _buildCurrentWorkspace(AppRoute route) {
     Widget content;
 
-    // Reset sub-navigation when switching primary tabs away from subjects
-    if (route != AppRoute.subjects && (_selectedSubject != null || _selectedTopic != null)) {
+    // Reset sub-navigation when switching primary tabs away from subjects/study
+    if (route != AppRoute.subjects &&
+        route != AppRoute.study &&
+        (_selectedSubject != null || _selectedTopic != null)) {
       _selectedSubject = null;
       _selectedTopic = null;
     }
 
-    if (route == AppRoute.subjects) {
+    if (route == AppRoute.subjects || route == AppRoute.study) {
       if (_selectedTopic != null && _selectedSubject != null) {
         content = TopicViewPage(
           subject: _selectedSubject!,
@@ -236,6 +305,12 @@ class _WorkspaceLayoutState extends State<WorkspaceLayout> {
             analyticsRepository: _analyticsRepo,
           );
           break;
+        case AppRoute.focus:
+          content = FocusWorkspacePage(
+            sessionController: _sessionController,
+            onStartSession: () => _openStudySetup(),
+          );
+          break;
         case AppRoute.aiCoach:
           content = AiCoachPage(
             aiCoachRepository: _aiCoachRepo,
@@ -246,17 +321,24 @@ class _WorkspaceLayoutState extends State<WorkspaceLayout> {
           content = const SettingsPage();
           break;
         case AppRoute.subjects:
+        case AppRoute.study:
           content = const SizedBox.shrink();
           break;
       }
     }
 
+    // AiCoachPage has its own internal bounded chat scroll layout
+    if (route == AppRoute.aiCoach) {
+      return content;
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 768;
         return SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.xxl,
-            vertical: AppSpacing.xl,
+          padding: EdgeInsets.symmetric(
+            horizontal: isMobile ? AppSpacing.md : AppSpacing.xxl,
+            vertical: isMobile ? AppSpacing.md : AppSpacing.xl,
           ),
           child: Center(
             child: ConstrainedBox(

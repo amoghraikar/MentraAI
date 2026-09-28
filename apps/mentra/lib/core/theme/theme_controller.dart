@@ -11,6 +11,14 @@ class ThemeController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  void toggleTheme() {
+    if (_themeMode == ThemeMode.dark) {
+      setThemeMode(ThemeMode.light);
+    } else {
+      setThemeMode(ThemeMode.dark);
+    }
+  }
 }
 
 class ThemeScope extends InheritedNotifier<ThemeController> {

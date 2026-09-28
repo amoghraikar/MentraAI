@@ -22,15 +22,15 @@ class _SettingsPageState extends State<SettingsPage> {
   int _selectedTab = 0;
   final ApiClient _apiClient = ApiClient();
 
-  final List<String> _tabs = [
-    'Profile',
-    'Appearance',
-    'Local AI Engine',
-    'Study Preferences',
-    'Privacy',
-    'Notifications',
-    'Camera & Permissions',
-    'Data',
+  static const List<({String label, IconData icon})> _tabDefs = [
+    (label: 'Profile', icon: Icons.person_outline_rounded),
+    (label: 'Appearance', icon: Icons.palette_outlined),
+    (label: 'Local AI Engine', icon: Icons.memory_rounded),
+    (label: 'Study Preferences', icon: Icons.tune_rounded),
+    (label: 'Privacy', icon: Icons.shield_outlined),
+    (label: 'Notifications', icon: Icons.notifications_none_rounded),
+    (label: 'Camera & Permissions', icon: Icons.videocam_outlined),
+    (label: 'Data', icon: Icons.storage_rounded),
   ];
 
   bool _isTestingKey = false;
@@ -44,64 +44,171 @@ class _SettingsPageState extends State<SettingsPage> {
     final themeCtrl = ThemeScope.of(context);
     final authCtrl = AuthScope.of(context);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const MentraPageHeader(
-          title: 'Settings',
-          subtitle: 'Manage your workspace, appearance, privacy, and study preferences',
-        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isDesktop = constraints.maxWidth >= 768;
 
-        // Settings Navigation Tabs
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: List.generate(_tabs.length, (index) {
-              final isSelected = _selectedTab == index;
-              return Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.sm),
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: () => setState(() => _selectedTab = index),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 120),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.base,
-                        vertical: AppSpacing.sm,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? theme.colorScheme.primary.withValues(alpha: isDark ? 0.2 : 0.1)
-                            : (isDark ? const Color(0xFF222222) : const Color(0xFFF2F2F0)),
-                        borderRadius: AppRadius.borderSm,
-                        border: Border.all(
-                          color: isSelected ? theme.colorScheme.primary : Colors.transparent,
-                          width: 1,
-                        ),
-                      ),
-                      child: Text(
-                        _tabs[index],
-                        style: AppTypography.labelMedium.copyWith(
-                          color: isSelected
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurface,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                        ),
-                      ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const MentraPageHeader(
+              title: 'Settings',
+              subtitle: 'Manage your workspace, appearance, privacy, and study preferences',
+            ),
+            const SizedBox(height: AppSpacing.md),
+            if (isDesktop)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Left settings navigation
+                  SizedBox(
+                    width: 220,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: List.generate(_tabDefs.length, (index) {
+                        final tab = _tabDefs[index];
+                        final isSelected = _selectedTab == index;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => setState(() => _selectedTab = index),
+                              borderRadius: AppRadius.borderSm,
+                              hoverColor: isDark
+                                  ? AppColors.darkSurfaceElevated
+                                  : AppColors.surfaceHover,
+                              child: Container(
+                                height: 38,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.sm,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? (isDark
+                                          ? AppColors.primary.withValues(alpha: 0.18)
+                                          : AppColors.primarySoft)
+                                      : Colors.transparent,
+                                  borderRadius: AppRadius.borderSm,
+                                  border: isSelected
+                                      ? Border.all(
+                                          color: isDark
+                                              ? AppColors.darkAccent.withValues(alpha: 0.3)
+                                              : AppColors.primary.withValues(alpha: 0.2),
+                                          width: 1,
+                                        )
+                                      : null,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      tab.icon,
+                                      size: 17,
+                                      color: isSelected
+                                          ? (isDark ? AppColors.darkAccent : AppColors.primary)
+                                          : (isDark ? AppColors.darkTextSecondary : AppColors.textSecondary),
+                                    ),
+                                    const SizedBox(width: AppSpacing.sm),
+                                    Expanded(
+                                      child: Text(
+                                        tab.label,
+                                        style: AppTypography.labelMedium.copyWith(
+                                          color: isSelected
+                                              ? (isDark ? AppColors.darkAccent : AppColors.primary)
+                                              : (isDark ? AppColors.darkTextPrimary : AppColors.textPrimary),
+                                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
                     ),
                   ),
+                  const SizedBox(width: AppSpacing.xl),
+                  // Vertical divider
+                  Container(
+                    width: 1,
+                    height: 480,
+                    color: isDark ? AppColors.darkBorder : AppColors.border,
+                  ),
+                  const SizedBox(width: AppSpacing.xl),
+                  // Right active panel
+                  Expanded(
+                    child: _buildActiveTabContent(_selectedTab, themeCtrl, authCtrl),
+                  ),
+                ],
+              )
+            else ...[
+              // Mobile horizontal tab navigation
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: List.generate(_tabDefs.length, (index) {
+                    final tab = _tabDefs[index];
+                    final isSelected = _selectedTab == index;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: AppSpacing.xs),
+                      child: InkWell(
+                        onTap: () => setState(() => _selectedTab = index),
+                        borderRadius: AppRadius.borderSm,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.md,
+                            vertical: AppSpacing.xs,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? (isDark
+                                    ? AppColors.primary.withValues(alpha: 0.2)
+                                    : AppColors.primarySoft)
+                                : (isDark ? AppColors.darkSurface : AppColors.surface),
+                            borderRadius: AppRadius.borderSm,
+                            border: Border.all(
+                              color: isSelected
+                                  ? (isDark ? AppColors.darkAccent : AppColors.primary)
+                                  : (isDark ? AppColors.darkBorder : AppColors.border),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                tab.icon,
+                                size: 15,
+                                color: isSelected
+                                    ? (isDark ? AppColors.darkAccent : AppColors.primary)
+                                    : (isDark ? AppColors.darkTextSecondary : AppColors.textSecondary),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                tab.label,
+                                style: AppTypography.labelMedium.copyWith(
+                                  color: isSelected
+                                      ? (isDark ? AppColors.darkAccent : AppColors.primary)
+                                      : (isDark ? AppColors.darkTextPrimary : AppColors.textPrimary),
+                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
                 ),
-              );
-            }),
-          ),
-        ),
-
-        const SizedBox(height: AppSpacing.xl),
-
-        // Selected Settings Panel
-        _buildActiveTabContent(_selectedTab, themeCtrl, authCtrl),
-      ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              _buildActiveTabContent(_selectedTab, themeCtrl, authCtrl),
+            ],
+          ],
+        );
+      },
     );
   }
 

@@ -44,7 +44,7 @@ When explaining a concept:
 
 INTENT_GUIDANCE_RULES = {
     "CASUAL_CHAT": "Respond naturally and warmly in 1-2 conversational sentences. Check what they are working on without overwhelming them.",
-    "FRUSTRATION": "Acknowledge their frustration with empathy. Ask what specific part feels stuck, or break it down into an ultra-simple 1-sentence analogy.",
+    "FRUSTRATION": "Acknowledge their frustration with empathy. Ask what specific part feels stuck or missing, try a different approach, or reset with a simple example or concept breakdown.",
     "CONCEPT_QUESTION": "Give a crisp, clear direct answer first. Offer a 1-sentence example or quick test if useful.",
     "TEACH_REQUEST": "Teach step-by-step: give the core concept, one concrete example, and ask 1 quick check-in question to see if it clicked.",
     "QUIZ_REQUEST": "Present 1 focused, active-recall question on their subject. Keep it challenging yet approachable.",

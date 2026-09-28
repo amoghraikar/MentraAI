@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
+import '../../../core/utils/formatters.dart';
 import '../domain/models/monitoring_models.dart';
 import 'camera_feed_stub.dart'
     if (dart.library.html) 'camera_feed_web.dart' as platform_camera;
@@ -69,6 +70,11 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
       setState(() {
         _telemetry = newTelemetry;
       });
+
+      // Do NOT trigger false distraction alerts if the CV backend is offline or camera has error
+      if (newTelemetry.focusState == 'BACKEND_OFFLINE' || newTelemetry.focusState == 'CAMERA_ERROR') {
+        return;
+      }
 
       final now = DateTime.now();
       FocusObservation obs;
@@ -588,6 +594,32 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
   }
 
   Widget _buildQualityChip() {
+    if (_telemetry.focusState == 'BACKEND_OFFLINE') {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.85),
+          borderRadius: AppRadius.borderSm,
+          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.8)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_rounded, size: 10, color: Colors.redAccent),
+            SizedBox(width: 4),
+            Text(
+              'CV BACKEND: OFFLINE',
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontSize: 8.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final status = _telemetry.cameraQuality.status;
     Color color;
     if (status == 'GOOD') {
@@ -787,10 +819,7 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
   }
 
   String _formatSecs(double sec) {
-    final s = sec.toInt();
-    final m = s ~/ 60;
-    final r = s % 60;
-    return '${m}m ${r.toString().padLeft(2, "0")}s';
+    return Formatters.formatDurationMinutesSeconds(sec);
   }
 
   Widget _buildDiagRow(String label, String value,
@@ -1024,18 +1053,19 @@ class _RealTimeFaceTrackingPainter extends CustomPainter {
     }
 
     // Dynamic Tag
+    final isOffline = telemetry.focusState == 'BACKEND_OFFLINE';
     final tagText = isDetected
         ? (isDistracted
             ? telemetry.statusMessage
             : 'FACE TRACKED (${(telemetry.confidence * 100).toStringAsFixed(0)}%)')
-        : 'AWAY FROM VIEW';
+        : (isOffline ? 'CV BACKEND OFFLINE' : 'AWAY FROM VIEW');
 
     final textSpan = TextSpan(
       text: tagText,
       style: TextStyle(
         color: isDetected
             ? (isDistracted ? Colors.amberAccent : const Color(0xFF7EE787))
-            : Colors.orangeAccent,
+            : (isOffline ? Colors.redAccent : Colors.orangeAccent),
         fontSize: isCompact ? 8.5 : 10.0,
         fontWeight: FontWeight.w800,
         letterSpacing: 0.6,

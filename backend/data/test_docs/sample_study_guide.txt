@@ -1,0 +1,5 @@
+Operating Systems Memory Management
+
+Virtual memory provides an idealized abstraction of the storage resources that are actually available on a given machine. It creates an illusion to the process of a large, uniform, and private address space.
+
+Paging is a memory management scheme by which a computer stores and retrieves data from secondary storage for use in main memory. The operating system divides virtual address space into equal-sized blocks called pages, while physical memory is divided into blocks called page frames. When a requested page is not in physical RAM, the MMU triggers a page fault interrupt, prompting the kernel to fetch the page from disk swap space.

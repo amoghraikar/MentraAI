@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from app.models.note import Note
     from app.models.goal import Goal
     from app.models.study_session import StudySession
-    from app.models.ai_coach import CoachMessage, CoachInsight
+    from app.models.ai_coach import CoachMessage, CoachInsight, Conversation
 
 
 class User(Base):
@@ -82,6 +82,11 @@ class User(Base):
     )
     coach_insights: Mapped[List["CoachInsight"]] = relationship(
         "CoachInsight",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    conversations: Mapped[List["Conversation"]] = relationship(
+        "Conversation",
         back_populates="user",
         cascade="all, delete-orphan",
     )

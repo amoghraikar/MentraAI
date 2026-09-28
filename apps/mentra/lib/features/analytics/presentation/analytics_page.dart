@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/mentra_badge.dart';
@@ -61,6 +62,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     if (_isLoading && _data == null) {
       return const Center(
@@ -88,38 +90,48 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                   subtitle: 'Study behavior, attention telemetry, subject allocation, and verified insights',
                 ),
               ),
-              // Time-Range Switcher
+              // Time-Range Switcher (Notion-style segmented control)
               Container(
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(20),
+                  color: isDark ? const Color(0xFF232321) : const Color(0xFFF7F7F5),
+                  borderRadius: AppRadius.borderMd,
                   border: Border.all(
-                    color: theme.colorScheme.outline.withValues(alpha: 0.15),
+                    color: theme.dividerColor,
+                    width: 1,
                   ),
                 ),
-                padding: const EdgeInsets.all(4),
+                padding: const EdgeInsets.all(3),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: AnalyticsTimeRange.values.map((range) {
                     final isSelected = _selectedRange == range;
-                    return GestureDetector(
-                      onTap: () => _onRangeChanged(range),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? theme.colorScheme.primary
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(
-                          range.label,
-                          style: AppTypography.labelSmall.copyWith(
+                    return MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                        onTap: () => _onRangeChanged(range),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 140),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                          decoration: BoxDecoration(
                             color: isSelected
-                                ? theme.colorScheme.onPrimary
-                                : theme.colorScheme.onSurfaceVariant,
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                ? (isDark ? const Color(0xFF2C2C28) : const Color(0xFFFFFFFF))
+                                : Colors.transparent,
+                            borderRadius: AppRadius.borderSm,
+                            border: isSelected
+                                ? Border.all(
+                                    color: isDark ? AppColors.darkBorderStrong : AppColors.lightBorder,
+                                    width: 1,
+                                  )
+                                : null,
+                          ),
+                          child: Text(
+                            range.label,
+                            style: AppTypography.labelSmall.copyWith(
+                              color: isSelected
+                                  ? theme.colorScheme.onSurface
+                                  : theme.colorScheme.onSurfaceVariant,
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                            ),
                           ),
                         ),
                       ),

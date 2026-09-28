@@ -113,12 +113,14 @@ class LocalLLMProvider(BaseAiProvider):
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 1500,
+        format: Optional[str] = None,
     ) -> str:
         return await self.engine.generate(
             messages=[{"role": "user", "content": prompt}],
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
+            format=format,
         )
 
     async def generate_structured(
@@ -128,10 +130,16 @@ class LocalLLMProvider(BaseAiProvider):
         response_model: Type[T],
         temperature: float = 0.5,
     ) -> T:
+        import re
+        field_names = list(response_model.model_fields.keys())
         schema_json = json.dumps(response_model.model_json_schema())
-        json_directive = f"Respond ONLY in valid JSON matching this schema, without markdown fences:\n{schema_json}"
+        json_directive = (
+            f"Respond ONLY in valid JSON.\n"
+            f"Output a JSON object with top-level keys: {json.dumps(field_names)}.\n"
+            f"Schema:\n{schema_json}"
+        )
         full_system = f"{system_prompt or ''}\n\n{json_directive}".strip()
-        raw = await self.generate_text(prompt, full_system, temperature, 1200)
+        raw = await self.generate_text(prompt, full_system, temperature, 1200, format="json")
         cleaned = raw.strip()
         if cleaned.startswith("```json"):
             cleaned = cleaned[7:]
@@ -139,7 +147,44 @@ class LocalLLMProvider(BaseAiProvider):
             cleaned = cleaned[3:]
         if cleaned.endswith("```"):
             cleaned = cleaned[:-3]
-        return response_model.model_validate_json(cleaned.strip())
+        cleaned = cleaned.strip()
+
+        # Extract JSON object boundaries if necessary
+        start_idx = cleaned.find("{")
+        end_idx = cleaned.rfind("}")
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            cleaned = cleaned[start_idx : end_idx + 1]
+
+        def _try_parse_and_validate(text: str) -> Optional[T]:
+            try:
+                data = json.loads(text, strict=False)
+                if isinstance(data, dict):
+                    # Unwrap if the model nested fields inside a "properties" key
+                    if "properties" in data and isinstance(data["properties"], dict):
+                        props = data["properties"]
+                        for k, v in list(props.items()):
+                            if isinstance(v, dict):
+                                if "value" in v:
+                                    props[k] = v["value"]
+                                elif "default" in v:
+                                    props[k] = v["default"]
+                        data = props
+                    return response_model.model_validate(data)
+            except Exception:
+                pass
+            return None
+
+        res = _try_parse_and_validate(cleaned)
+        if res is not None:
+            return res
+
+        # Repair invalid escape sequences (e.g. unescaped LaTeX backslashes \alpha, \frac, etc.)
+        repaired = re.sub(r'\\(?![/"\\bfnrtu]|u[0-9a-fA-F]{4})', r'\\\\', cleaned)
+        res = _try_parse_and_validate(repaired)
+        if res is not None:
+            return res
+
+        return response_model.model_validate_json(cleaned)
 
 
 class AiProviderFactory:
