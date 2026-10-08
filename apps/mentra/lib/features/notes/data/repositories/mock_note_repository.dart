@@ -1,17 +1,30 @@
+import 'dart:convert';
 import 'dart:math';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../domain/models/note_model.dart';
 import '../../domain/repositories/note_repository.dart';
 
 class MockNoteRepository implements NoteRepository {
-  MockNoteRepository() {
-    _initDefaults();
+  MockNoteRepository({FlutterSecureStorage? storage})
+      : _storage = storage ?? const FlutterSecureStorage() {
+    _ensureInitialized();
   }
 
-  final List<NoteModel> _notes = [];
+  final FlutterSecureStorage _storage;
+  static const _storageKey = 'mentra_offline_notes';
+  static final List<NoteModel> _sharedNotes = [];
+  static bool _isInitialized = false;
+
+  void _ensureInitialized() {
+    if (_isInitialized && _sharedNotes.isNotEmpty) return;
+    _initDefaults();
+    _loadFromStorage();
+  }
 
   void _initDefaults() {
+    if (_sharedNotes.isNotEmpty) return;
     final now = DateTime.now();
-    _notes.addAll([
+    _sharedNotes.addAll([
       NoteModel(
         id: 'note_1',
         subjectId: 'sub_1',
@@ -79,9 +92,37 @@ class MockNoteRepository implements NoteRepository {
     ]);
   }
 
+  Future<void> _loadFromStorage() async {
+    try {
+      final jsonStr = await _storage
+          .read(key: _storageKey)
+          .timeout(const Duration(milliseconds: 300));
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final list = jsonDecode(jsonStr) as List<dynamic>;
+        final loaded = list
+            .map((item) => NoteModel.fromJson(item as Map<String, dynamic>))
+            .toList();
+        if (loaded.isNotEmpty) {
+          _sharedNotes.clear();
+          _sharedNotes.addAll(loaded);
+        }
+      }
+    } catch (_) {}
+    _isInitialized = true;
+  }
+
+  Future<void> _saveToStorage() async {
+    try {
+      final list = _sharedNotes.map((n) => n.toJson()).toList();
+      await _storage
+          .write(key: _storageKey, value: jsonEncode(list))
+          .timeout(const Duration(milliseconds: 500));
+    } catch (_) {}
+  }
+
   @override
   Future<List<NoteModel>> getNotes({String? searchQuery, String? subjectId}) async {
-    return _notes.where((n) {
+    return _sharedNotes.where((n) {
       if (subjectId != null && n.subjectId != subjectId) return false;
       if (searchQuery != null && searchQuery.trim().isNotEmpty) {
         final q = searchQuery.toLowerCase();
@@ -98,7 +139,7 @@ class MockNoteRepository implements NoteRepository {
   @override
   Future<NoteModel?> getNoteById(String id) async {
     try {
-      return _notes.firstWhere((n) => n.id == id);
+      return _sharedNotes.firstWhere((n) => n.id == id);
     } catch (_) {
       return null;
     }
@@ -113,7 +154,7 @@ class MockNoteRepository implements NoteRepository {
     List<String> tags = const [],
   }) async {
     final note = NoteModel(
-      id: 'note_${Random().nextInt(999999)}',
+      id: 'note_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(9999)}',
       subjectId: subjectId,
       subjectTitle: subjectTitle,
       title: title,
@@ -121,23 +162,27 @@ class MockNoteRepository implements NoteRepository {
       updatedAt: DateTime.now(),
       tags: tags,
     );
-    _notes.insert(0, note);
+    _sharedNotes.insert(0, note);
+    await _saveToStorage();
     return note;
   }
 
   @override
   Future<NoteModel> updateNote(NoteModel note) async {
-    final index = _notes.indexWhere((n) => n.id == note.id);
+    final index = _sharedNotes.indexWhere((n) => n.id == note.id);
+    final updated = note.copyWith(updatedAt: DateTime.now());
     if (index != -1) {
-      final updated = note.copyWith(updatedAt: DateTime.now());
-      _notes[index] = updated;
-      return updated;
+      _sharedNotes[index] = updated;
+    } else {
+      _sharedNotes.insert(0, updated);
     }
-    throw Exception('Note not found');
+    await _saveToStorage();
+    return updated;
   }
 
   @override
   Future<void> deleteNote(String id) async {
-    _notes.removeWhere((n) => n.id == id);
+    _sharedNotes.removeWhere((n) => n.id == id);
+    await _saveToStorage();
   }
 }

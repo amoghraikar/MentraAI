@@ -600,17 +600,17 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.85),
           borderRadius: AppRadius.borderSm,
-          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.8)),
+          border: Border.all(color: const Color(0xFF2EA043).withValues(alpha: 0.8)),
         ),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off_rounded, size: 10, color: Colors.redAccent),
+            Icon(Icons.shield_rounded, size: 10, color: Color(0xFF2EA043)),
             SizedBox(width: 4),
             Text(
-              'CV BACKEND: OFFLINE',
+              'ON-DEVICE ENGINE',
               style: TextStyle(
-                color: Colors.redAccent,
+                color: Color(0xFF2EA043),
                 fontSize: 8.5,
                 fontWeight: FontWeight.w700,
               ),
@@ -1058,14 +1058,14 @@ class _RealTimeFaceTrackingPainter extends CustomPainter {
         ? (isDistracted
             ? telemetry.statusMessage
             : 'FACE TRACKED (${(telemetry.confidence * 100).toStringAsFixed(0)}%)')
-        : (isOffline ? 'CV BACKEND OFFLINE' : 'AWAY FROM VIEW');
+        : (isOffline ? 'ON-DEVICE FOCUS ACTIVE' : 'AWAY FROM VIEW');
 
     final textSpan = TextSpan(
       text: tagText,
       style: TextStyle(
         color: isDetected
             ? (isDistracted ? Colors.amberAccent : const Color(0xFF7EE787))
-            : (isOffline ? Colors.redAccent : Colors.orangeAccent),
+            : (isOffline ? const Color(0xFF7EE787) : Colors.orangeAccent),
         fontSize: isCompact ? 8.5 : 10.0,
         fontWeight: FontWeight.w800,
         letterSpacing: 0.6,

@@ -8,6 +8,8 @@ import '../../../shared/widgets/mentra_button.dart';
 import '../../../shared/widgets/mentra_card.dart';
 import '../../../shared/widgets/mentra_empty_state.dart';
 import '../../../shared/widgets/mentra_page_header.dart';
+import '../../subjects/domain/models/subject_model.dart';
+import '../../subjects/domain/repositories/subject_repository.dart';
 import '../domain/models/note_model.dart';
 import '../domain/repositories/note_repository.dart';
 import 'note_editor_view.dart';
@@ -16,9 +18,11 @@ class NotesPage extends StatefulWidget {
   const NotesPage({
     super.key,
     required this.noteRepository,
+    this.subjectRepository,
   });
 
   final NoteRepository noteRepository;
+  final SubjectRepository? subjectRepository;
 
   @override
   State<NotesPage> createState() => _NotesPageState();
@@ -26,6 +30,7 @@ class NotesPage extends StatefulWidget {
 
 class _NotesPageState extends State<NotesPage> {
   List<NoteModel> _notes = [];
+  List<SubjectModel> _availableSubjects = [];
   bool _isLoading = true;
   String _searchQuery = '';
   NoteModel? _selectedNoteForEditing;
@@ -34,6 +39,20 @@ class _NotesPageState extends State<NotesPage> {
   void initState() {
     super.initState();
     _loadNotes();
+    _loadSubjects();
+  }
+
+  Future<void> _loadSubjects() async {
+    if (widget.subjectRepository != null) {
+      try {
+        final subs = await widget.subjectRepository!.getSubjects();
+        if (mounted && subs.isNotEmpty) {
+          setState(() {
+            _availableSubjects = subs;
+          });
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _loadNotes() async {
@@ -55,7 +74,11 @@ class _NotesPageState extends State<NotesPage> {
 
   void _showNewNoteDialog() async {
     final titleController = TextEditingController();
-    String subject = 'Data Analytics';
+    final options = _availableSubjects.isNotEmpty
+        ? _availableSubjects.map((s) => s.title).toList()
+        : ['Data Analytics', 'Software Engineering', 'Web Programming'];
+
+    String subject = options.first;
 
     final result = await showDialog<bool>(
       context: context,
@@ -77,7 +100,7 @@ class _NotesPageState extends State<NotesPage> {
             const SizedBox(height: AppSpacing.xs),
             DropdownButtonFormField<String>(
               initialValue: subject,
-              items: ['Data Analytics', 'Software Engineering', 'Web Programming']
+              items: options
                   .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                   .toList(),
               onChanged: (v) => subject = v ?? subject,
@@ -102,15 +125,45 @@ class _NotesPageState extends State<NotesPage> {
     );
 
     if (result == true && titleController.text.trim().isNotEmpty) {
-      final newNote = await widget.noteRepository.createNote(
-        title: titleController.text.trim(),
-        subjectId: 'sub_gen',
-        subjectTitle: subject,
-        content: '# ${titleController.text.trim()}\n\nStart typing notes here...',
-        tags: [subject.split(' ').first, 'Notes'],
+      String subjectId = 'sub_gen';
+      final matchingSub = _availableSubjects.cast<SubjectModel?>().firstWhere(
+        (s) => s?.title.toLowerCase() == subject.toLowerCase(),
+        orElse: () => null,
       );
-      await _loadNotes();
-      setState(() => _selectedNoteForEditing = newNote);
+      if (matchingSub != null) {
+        subjectId = matchingSub.id;
+      } else {
+        if (subject == 'Data Analytics') {
+          subjectId = 'sub_1';
+        } else if (subject == 'Software Engineering') {
+          subjectId = 'sub_2';
+        } else if (subject == 'Web Programming') {
+          subjectId = 'sub_3';
+        }
+      }
+
+      try {
+        final newNote = await widget.noteRepository.createNote(
+          title: titleController.text.trim(),
+          subjectId: subjectId,
+          subjectTitle: subject,
+          content: '# ${titleController.text.trim()}\n\nStart typing notes here...',
+          tags: [subject.split(' ').first, 'Notes'],
+        );
+        await _loadNotes();
+        if (mounted) {
+          setState(() => _selectedNoteForEditing = newNote);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to create note: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -120,6 +173,17 @@ class _NotesPageState extends State<NotesPage> {
       return NoteEditorView(
         note: _selectedNoteForEditing!,
         noteRepository: widget.noteRepository,
+        onNoteUpdated: (updated) {
+          setState(() {
+            _selectedNoteForEditing = updated;
+            final idx = _notes.indexWhere((n) => n.id == updated.id);
+            if (idx != -1) {
+              _notes[idx] = updated;
+            } else {
+              _notes.insert(0, updated);
+            }
+          });
+        },
         onBack: () {
           setState(() => _selectedNoteForEditing = null);
           _loadNotes();

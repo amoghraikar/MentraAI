@@ -6,6 +6,7 @@ import 'package:mentra/core/network/api_client.dart';
 import 'package:mentra/features/analytics/data/repositories/api_analytics_repository.dart';
 import 'package:mentra/features/goals/data/repositories/api_goal_repository.dart';
 import 'package:mentra/features/notes/data/repositories/api_note_repository.dart';
+import 'package:mentra/features/notes/domain/models/note_model.dart';
 import 'package:mentra/features/study_session/data/repositories/api_session_repository.dart';
 import 'package:mentra/features/study_session/domain/models/study_session_record.dart';
 import 'package:mentra/features/subjects/data/repositories/api_subject_repository.dart';
@@ -134,6 +135,83 @@ void main() {
       final searchNotes = await repo.getNotes(searchQuery: 'Calculus');
       expect(searchNotes.length, 1);
       expect(searchNotes.first.title, 'Calculus Formulas');
+    });
+
+    test('createNote posts to backend and returns parsed NoteModel', () async {
+      final mockClient = MockClient((request) async {
+        expect(request.url.path, '/api/v1/notes');
+        expect(request.method, 'POST');
+        return http.Response(
+          jsonEncode({
+            'id': 'n_new',
+            'user_id': 'u_1',
+            'subject_id': 'sub_1',
+            'title': 'Operating Systems',
+            'content': 'CPU Scheduling',
+            'tags': ['OS', 'CS'],
+            'updated_at': '2026-09-29T12:00:00Z',
+            'created_at': '2026-09-29T12:00:00Z',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final repo = ApiNoteRepository(apiClient: ApiClient(httpClient: mockClient));
+      final created = await repo.createNote(
+        title: 'Operating Systems',
+        subjectId: 'sub_1',
+        subjectTitle: 'Computer Science',
+        content: 'CPU Scheduling',
+        tags: ['OS', 'CS'],
+      );
+
+      expect(created.id, 'n_new');
+      expect(created.title, 'Operating Systems');
+      expect(created.content, 'CPU Scheduling');
+    });
+
+    test('updateNote performs PUT and on 404 falls back to upsert POST', () async {
+      int postCalls = 0;
+      final mockClient = MockClient((request) async {
+        if (request.method == 'PUT') {
+          return http.Response('{"detail":"Note not found."}', 404);
+        }
+        if (request.method == 'POST') {
+          postCalls++;
+          return http.Response(
+            jsonEncode({
+              'id': 'n_upserted',
+              'user_id': 'u_1',
+              'subject_id': 'sub_1',
+              'title': 'Recovered Note',
+              'content': 'Saved via upsert',
+              'tags': ['Notes'],
+              'updated_at': '2026-09-29T12:00:00Z',
+              'created_at': '2026-09-29T12:00:00Z',
+            }),
+            201,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('', 500);
+      });
+
+      final repo = ApiNoteRepository(apiClient: ApiClient(httpClient: mockClient));
+      final saved = await repo.updateNote(
+        NoteModel(
+          id: 'note_client_123',
+          subjectId: 'sub_1',
+          subjectTitle: 'Computer Science',
+          title: 'Recovered Note',
+          content: 'Saved via upsert',
+          updatedAt: DateTime.now(),
+        ),
+      );
+
+      expect(postCalls, 1);
+      expect(saved.id, 'n_upserted');
+      expect(saved.title, 'Recovered Note');
     });
   });
 

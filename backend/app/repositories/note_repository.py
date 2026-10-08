@@ -39,6 +39,8 @@ class NoteRepository:
         update_data = note_in.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(db_note, field, value)
+        from datetime import datetime, timezone
+        db_note.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(db_note)
         return db_note

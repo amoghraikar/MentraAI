@@ -28,5 +28,6 @@ class NoteResponse(NoteBase):
 
     id: str
     user_id: str
+    subject_title: str | None = None
     created_at: datetime
     updated_at: datetime

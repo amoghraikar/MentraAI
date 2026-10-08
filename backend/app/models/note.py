@@ -70,5 +70,9 @@ class Note(Base):
     subject: Mapped["Subject"] = relationship("Subject", back_populates="notes")
     topic: Mapped["Topic | None"] = relationship("Topic", back_populates="notes")
 
+    @property
+    def subject_title(self) -> str:
+        return self.subject.title if self.subject else "General"
+
     def __repr__(self) -> str:
         return f"<Note id={self.id} title={self.title} subject_id={self.subject_id}>"

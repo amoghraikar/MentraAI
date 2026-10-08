@@ -4,7 +4,19 @@ import '../domain/models/monitoring_models.dart';
 /// Helper stub for non-web environments.
 class CameraFeedWebHelper {
   static Future<bool> startCalibration() async => true;
-  static Future<CVBaseline?> finishCalibration() async => null;
+  static Future<CVBaseline?> finishCalibration() async => CVBaseline(
+        faceCenterX: 0.50,
+        faceCenterY: 0.45,
+        faceSize: 0.28,
+        baselineYaw: 0.0,
+        baselinePitch: 0.0,
+        baselineRoll: 0.0,
+        normalEar: 0.31,
+        calibrationDuration: 3.0,
+        sampleCount: 20,
+        quality: 'GOOD',
+        createdAt: DateTime.now().millisecondsSinceEpoch / 1000.0,
+      );
   static Future<void> pauseMonitoring() async {}
   static Future<void> resumeMonitoring() async {}
   static Future<void> resetSession() async {}

@@ -145,3 +145,51 @@ def test_notes_goals_and_study_sessions():
 
     # 3. User 2 cannot access User 1's study session
     assert client.get(f"/api/v1/sessions/{session_id}", headers=headers2).status_code == 404
+
+
+def test_note_robustness_auto_subject_and_upsert():
+    _, token = create_authenticated_user()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. New user without notes gets seeded starter notes
+    get_res = client.get("/api/v1/notes", headers=headers)
+    assert get_res.status_code == 200
+    notes = get_res.json()
+    assert len(notes) == 3
+    assert any(n["title"] == "Correlation vs Causation & Regression Foundations" for n in notes)
+
+    # 2. Creating a note with generic client subject 'sub_gen' auto-resolves without 404
+    create_res = client.post(
+        "/api/v1/notes",
+        headers=headers,
+        json={
+            "subject_id": "sub_gen",
+            "title": "Machine Learning Foundations",
+            "content": "Supervised vs Unsupervised Learning",
+            "tags": ["AI", "ML"],
+        },
+    )
+    assert create_res.status_code == 201
+    created_note = create_res.json()
+    assert created_note["title"] == "Machine Learning Foundations"
+    assert created_note["subject_title"] is not None
+
+    # 3. Updating an unknown/mock ID performs upsert instead of 404
+    upsert_res = client.put(
+        "/api/v1/notes/note_mock_9999",
+        headers=headers,
+        json={
+            "subject_id": "sub_gen",
+            "title": "Upserted Study Note",
+            "content": "Saved successfully from client",
+            "tags": ["Upsert"],
+        },
+    )
+    assert upsert_res.status_code == 200
+    upserted = upsert_res.json()
+    assert upserted["title"] == "Upserted Study Note"
+    assert upserted["content"] == "Saved successfully from client"
+
+    # 4. Verify list now contains the updated/created notes
+    list_after = client.get("/api/v1/notes", headers=headers).json()
+    assert len(list_after) == 5

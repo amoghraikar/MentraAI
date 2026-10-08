@@ -187,8 +187,114 @@ class LocalLLMProvider(BaseAiProvider):
         return response_model.model_validate_json(cleaned)
 
 
+class GeminiProvider(BaseAiProvider):
+    """Google Gemini Cloud AI Provider for high-speed cloud reasoning."""
+
+    def __init__(self, api_key: str, model: Optional[str] = None):
+        self.api_key = api_key
+        self.model = model or "gemini-1.5-flash"
+
+    async def generate_text(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1500,
+        format: Optional[str] = None,
+    ) -> str:
+        import httpx
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        payload: Dict[str, Any] = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+        }
+        if system_prompt:
+            payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+        if format == "json":
+            payload["generationConfig"]["responseMimeType"] = "application/json"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.post(url, json=payload)
+            if res.status_code != 200:
+                raise Exception(f"Gemini API error ({res.status_code}): {res.text}")
+            data = res.json()
+            candidates = data.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if parts:
+                    return parts[0].get("text", "")
+            return ""
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        response_model: Type[T],
+        temperature: float = 0.5,
+    ) -> T:
+        raw = await self.generate_text(prompt, system_prompt, temperature, 1200, format="json")
+        return response_model.model_validate_json(raw)
+
+
+class OpenAiProvider(BaseAiProvider):
+    """OpenAI compatible Cloud Provider."""
+
+    def __init__(self, api_key: str, model: Optional[str] = None, base_url: Optional[str] = None):
+        self.api_key = api_key
+        self.model = model or "gpt-4o-mini"
+        self.base_url = (base_url or "https://api.openai.com/v1").rstrip("/")
+
+    async def generate_text(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1500,
+        format: Optional[str] = None,
+    ) -> str:
+        import httpx
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if format == "json":
+            payload["response_format"] = {"type": "json_object"}
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
+            if res.status_code != 200:
+                raise Exception(f"OpenAI API error ({res.status_code}): {res.text}")
+            data = res.json()
+            choices = data.get("choices", [])
+            if choices:
+                return choices[0].get("message", {}).get("content", "")
+            return ""
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        response_model: Type[T],
+        temperature: float = 0.5,
+    ) -> T:
+        raw = await self.generate_text(prompt, system_prompt, temperature, 1200, format="json")
+        return response_model.model_validate_json(raw)
+
+
 class AiProviderFactory:
-    """Factory providing the single local AI provider."""
+    """Factory providing AI providers (LocalLLM default with seamless Gemini/OpenAI cloud fallback)."""
 
     @staticmethod
     def get_provider(
@@ -197,9 +303,18 @@ class AiProviderFactory:
         model: Optional[str] = None,
         base_url: Optional[str] = None,
     ) -> BaseAiProvider:
+        p_name = (provider_name or os.getenv("AI_PROVIDER") or "").lower()
+        key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
+
+        if p_name == "gemini" or (key and "AIza" in key):
+            return GeminiProvider(api_key=key, model=model)
+        elif (p_name in ("openai", "chatgpt") and key) or (key and key.startswith("sk-")):
+            return OpenAiProvider(api_key=key, model=model, base_url=base_url)
+
         return LocalLLMProvider(model=model, base_url=base_url)
 
 
-# Backward compatibility aliases pointing exclusively to the real local provider
+# Backward compatibility aliases pointing to providers
 HeuristicAiProvider = LocalLLMProvider
 DynamicCognitiveAiProvider = LocalLLMProvider
+

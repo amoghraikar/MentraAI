@@ -293,6 +293,7 @@ class _WorkspaceLayoutState extends State<WorkspaceLayout> {
         case AppRoute.notes:
           content = NotesPage(
             noteRepository: _noteRepo,
+            subjectRepository: _subjectRepo,
           );
           break;
         case AppRoute.goals:

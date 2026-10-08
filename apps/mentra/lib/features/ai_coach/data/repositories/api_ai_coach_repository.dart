@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../../../../core/network/api_client.dart';
 import '../../domain/models/coach_insight.dart';
 import '../../domain/repositories/ai_coach_repository.dart';
@@ -8,10 +10,15 @@ class ApiAiCoachRepository implements AiCoachRepository {
   ApiAiCoachRepository({
     required this.apiClient,
     AiCoachRepository? fallbackRepository,
+    this.geminiApiKey,
   }) : _fallbackRepository = fallbackRepository ?? MockAiCoachRepository();
 
   final ApiClient apiClient;
   final AiCoachRepository _fallbackRepository;
+  final String? geminiApiKey;
+
+  static const String _defaultGeminiKey = String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
+  static const String _ollamaBaseUrl = 'http://127.0.0.1:11434';
 
   @override
   Future<List<CoachInsightModel>> getCoachInsights() async {
@@ -79,6 +86,7 @@ class ApiAiCoachRepository implements AiCoachRepository {
     String? customEndpointUrl,
     String? attachedMaterialText,
   }) async {
+    // 1. Try FastAPI backend
     try {
       final historyPayload = (history ?? []).map((h) {
         return {
@@ -102,7 +110,7 @@ class ApiAiCoachRepository implements AiCoachRepository {
           'is_session_active': ?isSessionActive,
           'focus_score': ?focusScore,
           'include_study_context': true,
-          if (provider != null) ...{'provider': provider},
+          'provider': ?provider,
           if (apiKey != null && apiKey.isNotEmpty) 'api_key': apiKey,
           if (model != null && model.isNotEmpty) 'model': model,
           if (customSystemPrompt != null && customSystemPrompt.isNotEmpty) 'custom_system_prompt': customSystemPrompt,
@@ -123,10 +131,46 @@ class ApiAiCoachRepository implements AiCoachRepository {
           );
         }
       }
-    } catch (_) {
-      // Backend offline or network unavailable: seamlessly fall back to built-in study engine
+    } catch (_) {}
+
+    // 2. Try direct local Ollama if reachable
+    try {
+      final buffer = StringBuffer();
+      await for (final chunk in _streamDirectFromOllama(question, history: history, customSystemPrompt: customSystemPrompt)) {
+        buffer.write(chunk);
+      }
+      final out = buffer.toString().trim();
+      if (out.isNotEmpty) {
+        return ChatMessage(
+          id: 'ollama_${DateTime.now().millisecondsSinceEpoch}',
+          sender: 'coach',
+          text: out,
+          timestamp: DateTime.now(),
+        );
+      }
+    } catch (_) {}
+
+    // 3. Try direct Cloud Gemini if key available
+    final effectiveKey = (apiKey != null && apiKey.isNotEmpty) ? apiKey : (geminiApiKey ?? _defaultGeminiKey);
+    if (effectiveKey.isNotEmpty) {
+      try {
+        final buffer = StringBuffer();
+        await for (final chunk in _streamDirectFromGemini(question, history: history, apiKey: effectiveKey)) {
+          buffer.write(chunk);
+        }
+        final out = buffer.toString().trim();
+        if (out.isNotEmpty) {
+          return ChatMessage(
+            id: 'gemini_${DateTime.now().millisecondsSinceEpoch}',
+            sender: 'coach',
+            text: out,
+            timestamp: DateTime.now(),
+          );
+        }
+      } catch (_) {}
     }
 
+    // 4. Built-in academic knowledge engine
     return _fallbackRepository.askCoachQuestion(
       question,
       subjectId: subjectId,
@@ -164,6 +208,8 @@ class ApiAiCoachRepository implements AiCoachRepository {
     String? customSystemPrompt,
   }) async* {
     bool receivedAnyChunk = false;
+
+    // --- TIER 1: FASTAPI BACKEND (PORT 8000) ---
     try {
       final body = <String, dynamic>{
         'message': question,
@@ -234,40 +280,237 @@ class ApiAiCoachRepository implements AiCoachRepository {
           }
         }
       }
-    } catch (e) {
-      if (!receivedAnyChunk) {
-        // Backend offline or network failed: seamlessly stream from built-in engine!
-        yield* _fallbackRepository.streamCoachQuestion(
-          question,
-          subjectId: subjectId,
-          topicId: topicId,
-          subjectTitle: subjectTitle,
-          topicTitle: topicTitle,
-          studyGoal: studyGoal,
-          elapsedMinutes: elapsedMinutes,
-          targetDurationMinutes: targetDurationMinutes,
-          isSessionActive: isSessionActive,
-          focusScore: focusScore,
-          history: history,
-          customSystemPrompt: customSystemPrompt,
-        );
+    } catch (_) {}
+
+    if (receivedAnyChunk) return;
+
+    // --- TIER 2: DIRECT LOCAL OLLAMA STREAMING (PORT 11434) ---
+    try {
+      await for (final chunk in _streamDirectFromOllama(
+        question,
+        history: history,
+        customSystemPrompt: customSystemPrompt,
+      )) {
+        receivedAnyChunk = true;
+        yield chunk;
       }
+    } catch (_) {}
+
+    if (receivedAnyChunk) return;
+
+    // --- TIER 3: DIRECT CLOUD GEMINI STREAMING ---
+    final effectiveKey = geminiApiKey ?? _defaultGeminiKey;
+    if (effectiveKey.isNotEmpty) {
+      try {
+        await for (final chunk in _streamDirectFromGemini(
+          question,
+          history: history,
+          apiKey: effectiveKey,
+        )) {
+          receivedAnyChunk = true;
+          yield chunk;
+        }
+      } catch (_) {}
+    }
+
+    if (receivedAnyChunk) return;
+
+    // --- TIER 4: HIGH-YIELD BUILT-IN ACADEMIC KNOWLEDGE ENGINE ---
+    yield* _fallbackRepository.streamCoachQuestion(
+      question,
+      subjectId: subjectId,
+      topicId: topicId,
+      subjectTitle: subjectTitle,
+      topicTitle: topicTitle,
+      studyGoal: studyGoal,
+      elapsedMinutes: elapsedMinutes,
+      targetDurationMinutes: targetDurationMinutes,
+      isSessionActive: isSessionActive,
+      focusScore: focusScore,
+      history: history,
+      customSystemPrompt: customSystemPrompt,
+    );
+  }
+
+  /// Streams tokens directly from local Ollama runtime over HTTP with zero intermediate server.
+  Stream<String> _streamDirectFromOllama(
+    String question, {
+    List<ChatMessage>? history,
+    String? customSystemPrompt,
+  }) async* {
+    final client = http.Client();
+    try {
+      final uri = Uri.parse('$_ollamaBaseUrl/api/chat');
+      final messages = <Map<String, String>>[
+        {
+          'role': 'system',
+          'content': customSystemPrompt ??
+              'You are Mentra, an expert personal AI study coach. Teach clearly, concisely, and helpfully using clean markdown formatting.',
+        },
+        for (final m in (history ?? []).take(8))
+          {'role': m.sender == 'user' ? 'user' : 'assistant', 'content': m.text},
+        {'role': 'user', 'content': question},
+      ];
+
+      final request = http.Request('POST', uri)
+        ..headers['Content-Type'] = 'application/json'
+        ..body = jsonEncode({
+          'model': 'qwen2.5:1.5b',
+          'messages': messages,
+          'stream': true,
+        });
+
+      final streamedResponse = await client.send(request).timeout(const Duration(seconds: 4));
+      if (streamedResponse.statusCode != 200) {
+        throw Exception('Ollama returned status ${streamedResponse.statusCode}');
+      }
+
+      await for (final chunk in streamedResponse.stream.transform(utf8.decoder)) {
+        for (final line in chunk.split('\n')) {
+          final trimmed = line.trim();
+          if (trimmed.isEmpty) continue;
+          try {
+            final data = jsonDecode(trimmed);
+            if (data is Map<String, dynamic>) {
+              final content = data['message']?['content'] as String? ?? '';
+              if (content.isNotEmpty) {
+                yield content;
+              }
+              if (data['done'] == true) {
+                return;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Streams directly from Google Gemini API over HTTPS (works anywhere, including Netlify).
+  Stream<String> _streamDirectFromGemini(
+    String question, {
+    List<ChatMessage>? history,
+    required String apiKey,
+  }) async* {
+    final client = http.Client();
+    try {
+      final uri = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key=$apiKey',
+      );
+
+      final contents = <Map<String, dynamic>>[];
+      for (final m in (history ?? []).take(6)) {
+        contents.add({
+          'role': m.sender == 'user' ? 'user' : 'model',
+          'parts': [{'text': m.text}],
+        });
+      }
+      contents.add({
+        'role': 'user',
+        'parts': [{'text': question}],
+      });
+
+      final request = http.Request('POST', uri)
+        ..headers['Content-Type'] = 'application/json'
+        ..body = jsonEncode({
+          'contents': contents,
+          'systemInstruction': {
+            'parts': [
+              {
+                'text':
+                    'You are Mentra, an elite personal AI study coach. Teach clearly, concisely, and helpfully with mathematical formulas, exam tips, and structured markdown.',
+              }
+            ]
+          },
+        });
+
+      final streamedResponse = await client.send(request).timeout(const Duration(seconds: 8));
+      if (streamedResponse.statusCode != 200) {
+        throw Exception('Gemini API returned status ${streamedResponse.statusCode}');
+      }
+
+      await for (final chunk in streamedResponse.stream.transform(utf8.decoder)) {
+        for (final line in chunk.split('\n')) {
+          final trimmed = line.trim();
+          if (trimmed.startsWith('data: ')) {
+            final jsonStr = trimmed.substring(6).trim();
+            if (jsonStr.isEmpty) continue;
+            try {
+              final data = jsonDecode(jsonStr);
+              if (data is Map<String, dynamic>) {
+                final candidates = data['candidates'] as List?;
+                if (candidates != null && candidates.isNotEmpty) {
+                  final parts = candidates[0]['content']?['parts'] as List?;
+                  if (parts != null) {
+                    for (final p in parts) {
+                      final text = p['text'] as String? ?? '';
+                      if (text.isNotEmpty) yield text;
+                    }
+                  }
+                }
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    } finally {
+      client.close();
     }
   }
 
   @override
   Future<Map<String, dynamic>> getModelStatus() async {
+    // 1. Check FastAPI backend
     try {
       final res = await apiClient.get('/api/v1/ai-coach/status');
-      if (res is Map<String, dynamic>) {
-        return res;
+      if (res is Map<String, dynamic> && res['is_ready'] == true) {
+        return {
+          'state': 'READY',
+          'model': res['model'] ?? 'Qwen2.5-1.5B (Local FastAPI)',
+          'status_message': res['status_message'] ?? 'Connected to Mentra Backend & Qwen2.5',
+          'is_ready': true,
+          'engine_type': 'backend',
+        };
       }
     } catch (_) {}
+
+    // 2. Check direct Ollama runtime
+    try {
+      final client = http.Client();
+      final res = await client.get(Uri.parse('$_ollamaBaseUrl/api/tags')).timeout(const Duration(milliseconds: 1200));
+      client.close();
+      if (res.statusCode == 200) {
+        return {
+          'state': 'READY',
+          'model': 'Qwen2.5-1.5B (Ollama Direct)',
+          'status_message': 'Connected directly to Local Ollama Neural Engine',
+          'is_ready': true,
+          'engine_type': 'ollama_direct',
+        };
+      }
+    } catch (_) {}
+
+    // 3. Check Gemini API key
+    final effectiveKey = geminiApiKey ?? _defaultGeminiKey;
+    if (effectiveKey.isNotEmpty) {
+      return {
+        'state': 'READY',
+        'model': 'Gemini 1.5 Flash (Cloud API)',
+        'status_message': 'Connected to Google AI Studio',
+        'is_ready': true,
+        'engine_type': 'gemini',
+      };
+    }
+
+    // 4. Built-in Academic Knowledge Engine
     return {
       'state': 'READY',
-      'model': 'Mentra Neural Core (Built-In)',
-      'status_message': 'Mentra AI is active and ready.',
+      'model': 'Mentra Academic Knowledge Core (On-Device)',
+      'status_message': 'On-Device Academic Intelligence Active',
       'is_ready': true,
+      'engine_type': 'built_in',
     };
   }
 

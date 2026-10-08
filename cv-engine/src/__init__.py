@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from .attention import HeadPoseEstimator, HeadPoseResult
+from .audio import AudioAlertManager, SoundType, ToneGenerator
 from .behavior import (
     AlertPolicy,
     BehaviorObservation,
@@ -62,6 +63,7 @@ class CvFrameResult:
     latency_ms: float
     phone_available: bool = False
     baseline_active: bool = False
+    audio_played: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -70,7 +72,12 @@ class CvFrameResult:
 class CvEngine:
     """Master on-device Computer Vision Engine for Mentra with Calibration & Quality Controls."""
 
-    def __init__(self, enable_phone_detection: bool = True) -> None:
+    def __init__(
+        self,
+        enable_phone_detection: bool = True,
+        enable_audio_alerts: bool = True,
+        audio_volume: float = 0.6,
+    ) -> None:
         self.face_detector = FaceDetector()
         self.eye_detector = EyeDetector()
         self.head_pose_estimator = HeadPoseEstimator()
@@ -80,6 +87,7 @@ class CvEngine:
         self.quality_evaluator = CameraQualityEvaluator()
         self.calibration_session = CalibrationSession(target_duration_seconds=3.0)
         self.fps_tracker = FpsTracker()
+        self.audio_manager = AudioAlertManager(enabled=enable_audio_alerts, volume=audio_volume)
 
         self.current_baseline: Optional[CVBaseline] = None
 
@@ -261,7 +269,12 @@ class CvEngine:
             timestamp=now,
         )
 
-        # 6. Performance & Diagnostic Telemetry
+        # 6. Audio Alerts on Confirmed Distraction or Drowsiness
+        audio_played = False
+        if self.audio_manager and behavior_obs.active_alert:
+            audio_played = self.audio_manager.handle_alert(behavior_obs.active_alert.type, now=now)
+
+        # 7. Performance & Diagnostic Telemetry
         fps = self.fps_tracker.tick()
         latency_ms = round((time.time() - start_time) * 1000.0, 1)
 
@@ -299,6 +312,7 @@ class CvEngine:
             fps=fps,
             latency_ms=latency_ms,
             baseline_active=self.current_baseline is not None,
+            audio_played=audio_played,
         )
 
     def _build_empty_result(self, now: float) -> CvFrameResult:
@@ -354,17 +368,43 @@ class CvEngine:
             fps=0.0,
             latency_ms=0.0,
             baseline_active=self.current_baseline is not None,
+            audio_played=False,
         )
 
+    def set_audio_alerts(self, enabled: bool) -> None:
+        """Enable or disable audio beeps and cues."""
+        if self.audio_manager:
+            self.audio_manager.enabled = enabled
+
+    def set_audio_volume(self, volume: float) -> None:
+        """Adjust alert audio volume (0.0 to 1.0)."""
+        if self.audio_manager:
+            self.audio_manager.volume = volume
+
+    @property
+    def is_audio_enabled(self) -> bool:
+        """Return whether audio alerts are currently enabled."""
+        return self.audio_manager.enabled if self.audio_manager else False
+
+    def play_audio_alert(self, alert_type: str = "BEEP") -> bool:
+        """Manually trigger an audio cue (e.g. for testing or UI events)."""
+        if not self.audio_manager:
+            return False
+        return self.audio_manager.handle_alert(alert_type)
+
     def reset(self) -> None:
-        """Reset session metrics, temporal state machines, and calibration."""
+        """Reset session metrics, temporal state machines, audio cooldowns, and calibration."""
         self.drowsiness_tracker.reset()
         self.behavior_engine.reset()
         self.calibration_session.reset()
+        if self.audio_manager:
+            self.audio_manager.reset()
 
     def close(self) -> None:
-        """Release underlying detector resources."""
+        """Release underlying detector and audio resources."""
         self.face_detector.close()
+        if self.audio_manager:
+            self.audio_manager.close()
 
 
 __all__ = [
@@ -387,4 +427,7 @@ __all__ = [
     "ConfidenceLevel",
     "FocusAlert",
     "SessionMetrics",
+    "AudioAlertManager",
+    "SoundType",
+    "ToneGenerator",
 ]

@@ -45,6 +45,31 @@ void main() {
       expect(reply.text, contains('Namaskāra'));
     });
 
+    test('askCoachQuestion answers BCA and B.Tech computer science questions with code and complexity', () async {
+      // Test Binary Search (DSA)
+      final dsaReply = await repository.askCoachQuestion('what is binary search algorithm');
+      expect(dsaReply.sender, 'coach');
+      expect(dsaReply.text, contains('O(log N)'));
+      expect(dsaReply.text, contains('binarySearch'));
+      expect(dsaReply.text, contains('divide-and-conquer'));
+
+      // Test Deadlock (OS)
+      final osReply = await repository.askCoachQuestion('explain deadlock in operating systems');
+      expect(osReply.text, contains('Mutual Exclusion'));
+      expect(osReply.text, contains('Circular Wait'));
+      expect(osReply.text, contains("Banker's Algorithm"));
+
+      // Test SQL Joins (DBMS)
+      final dbmsReply = await repository.askCoachQuestion('what are sql joins in dbms');
+      expect(dbmsReply.text, contains('INNER JOIN'));
+      expect(dbmsReply.text, contains('LEFT (OUTER) JOIN'));
+
+      // Test farewells (bye)
+      final byeReply = await repository.askCoachQuestion('bye');
+      expect(byeReply.text, contains('Great work on your session'));
+      expect(byeReply.text, isNot(contains('always isolate the primary variable')));
+    });
+
     test('explainConcept produces structured breakdown', () async {
       final explanation = await repository.explainConcept('Neural Networks');
       expect(explanation['concept_name'], 'Neural Networks');

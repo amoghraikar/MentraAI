@@ -14,11 +14,13 @@ class NoteEditorView extends StatefulWidget {
     required this.note,
     required this.noteRepository,
     required this.onBack,
+    this.onNoteUpdated,
   });
 
   final NoteModel note;
   final NoteRepository noteRepository;
   final VoidCallback onBack;
+  final ValueChanged<NoteModel>? onNoteUpdated;
 
   @override
   State<NoteEditorView> createState() => _NoteEditorViewState();
@@ -46,25 +48,54 @@ class _NoteEditorViewState extends State<NoteEditorView> {
   }
 
   Future<void> _save() async {
+    if (_isSaving) return;
     setState(() => _isSaving = true);
+    final title = _titleController.text.trim().isNotEmpty
+        ? _titleController.text.trim()
+        : 'Untitled Note';
     final updated = _currentNote.copyWith(
-      title: _titleController.text.trim().isNotEmpty
-          ? _titleController.text.trim()
-          : 'Untitled Note',
+      title: title,
       content: _contentController.text,
+      updatedAt: DateTime.now(),
     );
-    await widget.noteRepository.updateNote(updated);
-    if (!mounted) return;
-    setState(() {
-      _currentNote = updated;
-      _isSaving = false;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Note saved successfully.'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    try {
+      final saved = await widget.noteRepository.updateNote(updated);
+      if (!mounted) return;
+      setState(() {
+        _currentNote = saved;
+        _isSaving = false;
+      });
+      widget.onNoteUpdated?.call(saved);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text('Note saved successfully.'),
+            ],
+          ),
+          backgroundColor: Color(0xFF10B981),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Failed to save note: ${e.toString()}')),
+            ],
+          ),
+          backgroundColor: Colors.redAccent,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   Future<void> _delete() async {

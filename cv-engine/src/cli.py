@@ -74,6 +74,8 @@ def cmd_status(args):
         print(f"  • Temporal Smoothing:   GENUINELY SUPPORTED (Multi-second debounce)")
         print(f"  • Alert Cooldown:       GENUINELY SUPPORTED (Decoupled AlertPolicy)")
         print(f"  • Verified Metrics:     GENUINELY SUPPORTED (Continuous observed time)")
+        audio_ok = engine.audio_manager is not None and engine.audio_manager.enabled
+        print(f"  • Audio Alert Cues:     {'GENUINELY SUPPORTED (Non-blocking WAV & Bell)' if audio_ok else 'DISABLED'}")
     except Exception as e:
         print(f"[-] Error probing engine signals: {e}")
     print("==============================================\n")
@@ -116,11 +118,39 @@ def cmd_test_image(args):
     print("============================\n")
 
 
+def cmd_test_sound(args):
+    print(f"\n[*] Testing CV Engine Audio Alerts (type: {args.type}, volume: {args.volume})...")
+    from src.audio import AudioAlertManager
+    manager = AudioAlertManager(enabled=True, volume=args.volume)
+
+    target_types = ["distraction", "drowsiness", "beep"] if args.type == "all" else [args.type]
+
+    for st in target_types:
+        print(f"[*] Playing sound: {st.upper()}...")
+        if st == "distraction":
+            manager.play_distraction()
+            time.sleep(0.9)
+        elif st == "drowsiness":
+            manager.play_drowsiness()
+            time.sleep(1.2)
+        elif st == "beep":
+            manager.play_beep(frequency=args.frequency)
+            time.sleep(0.6)
+
+    manager.close()
+    print("[+] Audio alert test completed.\n")
+
+
 def cmd_webcam(args):
-    print(f"\n[*] Starting live webcam CV pipeline on device {args.camera_id} at {args.fps} FPS...")
+    audio_status = "ENABLED" if not args.no_audio else "DISABLED"
+    print(f"\n[*] Starting live webcam CV pipeline on device {args.camera_id} at {args.fps} FPS (Audio: {audio_status})...")
     print("[*] Press Ctrl+C to stop.\n")
 
-    engine = CvEngine(enable_phone_detection=True)
+    engine = CvEngine(
+        enable_phone_detection=True,
+        enable_audio_alerts=not args.no_audio,
+        audio_volume=args.volume,
+    )
     cam = CameraLifecycleManager(camera_index=args.camera_id, target_fps=args.fps)
 
     if not cam.start():
@@ -149,10 +179,11 @@ def cmd_webcam(args):
             pose_str = f"Y:{res.yaw:+.0f}° P:{res.pitch:+.0f}°"
             phone_str = f"Phone:{'YES' if res.phone_detected else 'no'}"
             cam_str = f"Cam:{res.camera_quality['status']}"
+            sound_str = "🔊 BEEP!" if res.audio_played else ""
 
             print(
                 f"\rFrame #{frame_count:04d} | {focus_str:<22} | Face:{'YES' if res.face_detected else 'NO '} | "
-                f"{ear_str} | {pose_str:<12} | {phone_str} | {cam_str} | {alert_str:<20} | {res.latency_ms:.0f}ms",
+                f"{ear_str} | {pose_str:<12} | {phone_str} | {cam_str} | {alert_str:<20} | {sound_str:<9} | {res.latency_ms:.0f}ms",
                 end="",
                 flush=True,
             )
@@ -230,7 +261,21 @@ def main():
     p_cam.add_argument("--camera-id", type=int, default=0, help="Camera device index (default: 0)")
     p_cam.add_argument("--fps", type=float, default=8.0, help="Target capture FPS (default: 8.0)")
     p_cam.add_argument("--duration", type=float, default=0.0, help="Duration in seconds (0 = indefinite until Ctrl+C)")
+    p_cam.add_argument("--no-audio", action="store_true", help="Disable audio beep/chime alerts")
+    p_cam.add_argument("--volume", type=float, default=0.6, help="Audio alert volume (0.0 to 1.0, default: 0.6)")
     p_cam.set_defaults(func=cmd_webcam)
+
+    # Test Sound
+    p_sound = subparsers.add_parser("test-sound", help="Test distraction, drowsiness, or beep audio alerts")
+    p_sound.add_argument(
+        "--type",
+        choices=["distraction", "drowsiness", "beep", "all"],
+        default="all",
+        help="Sound type to audition (distraction, drowsiness, beep, all)",
+    )
+    p_sound.add_argument("--frequency", type=float, default=880.0, help="Frequency in Hz for beep test (default: 880)")
+    p_sound.add_argument("--volume", type=float, default=0.6, help="Playback volume (0.0 to 1.0, default: 0.6)")
+    p_sound.set_defaults(func=cmd_test_sound)
 
     # Benchmark
     p_bench = subparsers.add_parser("benchmark", help="Measure pipeline processing latency and FPS")

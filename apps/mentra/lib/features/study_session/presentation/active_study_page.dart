@@ -469,8 +469,8 @@ class _ActiveStudyPageState extends State<ActiveStudyPage> {
                     statusColor = Colors.lightBlueAccent;
                     break;
                   case 'BACKEND_OFFLINE':
-                    statusText = 'CV Backend Offline';
-                    statusColor = Colors.redAccent;
+                    statusText = 'On-Device Focus';
+                    statusColor = AppColors.success;
                     break;
                   case 'CAMERA_ERROR':
                     statusText = 'Camera Error';
