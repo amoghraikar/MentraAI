@@ -53,7 +53,7 @@ class FocusBehaviorEngine:
         face_absent_threshold_seconds: float = 2.0,
         looking_away_threshold_seconds: float = 1.3,
         looking_down_threshold_seconds: float = 1.5,
-        phone_threshold_seconds: float = 1.0,
+        phone_threshold_seconds: float = 0.5,
         recovery_duration_seconds: float = 0.5,
         alert_cooldown_seconds: float = 8.0,
     ) -> None:
@@ -136,7 +136,21 @@ class FocusBehaviorEngine:
             metrics = self.accumulator.tick(self._current_state.value, now)
             return BehaviorObservation(now, self._current_state, confidence, None, metrics)
 
-        # 1. Face Presence Evaluation
+        # 1. Phone Detection Evaluation (Highest priority physical distraction)
+        # Evaluated first: even if the phone occludes the face, phone distraction triggers.
+        phone_dur = self.phone_tracker.update(phone_detected, now)
+        if phone_detected:
+            if self.phone_tracker.is_triggered:
+                self._current_state = FocusState.PHONE_DETECTED
+                self._was_distracted = True
+                alert = self.alert_policy.create_alert("PHONE_DETECTED", now)
+            else:
+                self._current_state = FocusState.POSSIBLE_DISTRACTION
+
+            metrics = self.accumulator.tick(self._current_state.value, now)
+            return BehaviorObservation(now, self._current_state, confidence, alert, metrics)
+
+        # 2. Face Presence Evaluation
         absent_dur = self.face_absent_tracker.update(not face_present, now)
         if not face_present:
             # Reset other trackers
@@ -151,19 +165,6 @@ class FocusBehaviorEngine:
                 alert = self.alert_policy.create_alert("FACE_NOT_DETECTED", now)
             else:
                 # Brief absence: do not jump to distraction alert yet
-                self._current_state = FocusState.POSSIBLE_DISTRACTION
-
-            metrics = self.accumulator.tick(self._current_state.value, now)
-            return BehaviorObservation(now, self._current_state, confidence, alert, metrics)
-
-        # 2. Phone Detection Evaluation (Highest priority physical distraction)
-        phone_dur = self.phone_tracker.update(phone_detected, now)
-        if phone_detected:
-            if self.phone_tracker.is_triggered:
-                self._current_state = FocusState.PHONE_DETECTED
-                self._was_distracted = True
-                alert = self.alert_policy.create_alert("PHONE_DETECTED", now)
-            else:
                 self._current_state = FocusState.POSSIBLE_DISTRACTION
 
             metrics = self.accumulator.tick(self._current_state.value, now)

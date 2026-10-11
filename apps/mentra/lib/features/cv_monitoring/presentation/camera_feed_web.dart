@@ -555,7 +555,9 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
             statusMsg = 'FACE NOT DETECTED';
           }
 
-          final attentionScore = focusState == 'FOCUSED' ? 0.95 : (isFaceDetected ? 0.35 : 0.0);
+          final effectiveFocusState = phoneDetected ? 'PHONE_DETECTED' : focusState;
+          final effectiveAttention = phoneDetected ? 0.15 : (effectiveFocusState == 'FOCUSED' ? 0.95 : (isFaceDetected ? 0.35 : 0.0));
+          final effectiveScore = phoneDetected ? 25 : focusScore;
 
           final telemetry = RealTimeCvTelemetry(
             isFaceDetected: isFaceDetected,
@@ -568,7 +570,7 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
             yawDeviation: yawDeviation,
             pitchDeviation: pitchDeviation,
             rollDeviation: rollDeviation,
-            attentionScore: attentionScore,
+            attentionScore: effectiveAttention,
             ear: ear,
             leftEar: leftEar,
             rightEar: rightEar,
@@ -576,7 +578,7 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
             phoneConfidence: phoneConfidence,
             phoneAvailable: phoneAvailable,
             orientation: orientation,
-            focusState: focusState,
+            focusState: effectiveFocusState,
             confidenceLevel: confidenceLevel,
             cameraQuality: qualityInfo,
             fps: engineFps > 0 ? engineFps : _clientFps,
@@ -591,7 +593,7 @@ class _WebCameraPlayerState extends State<_WebCameraPlayer> {
             faceNotDetectedDuration: faceNotDetDur,
             unknownDuration: unknownDur,
             distractionCount: distCount,
-            focusScore: focusScore,
+            focusScore: effectiveScore,
           );
 
           _consecutiveErrors = 0;

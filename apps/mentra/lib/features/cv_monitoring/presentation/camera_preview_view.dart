@@ -79,6 +79,7 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
       final now = DateTime.now();
       FocusObservation obs;
 
+      final isPhone = newTelemetry.phoneDetected || newTelemetry.focusState == 'PHONE_DETECTED';
       obs = FocusObservation(
         timestamp: now,
         isFaceDetected: newTelemetry.isFaceDetected,
@@ -86,21 +87,21 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
         faceConfidence: newTelemetry.confidence,
         eyeState: newTelemetry.ear < 0.20 ? EyeState.closed : EyeState.open,
         eyeOpenProbability: (newTelemetry.ear / 0.30).clamp(0.0, 1.0),
-        isDistractionDetected: newTelemetry.focusState == 'LOOKING_AWAY' ||
+        isDistractionDetected: isPhone ||
+            newTelemetry.focusState == 'LOOKING_AWAY' ||
             newTelemetry.focusState == 'LOOKING_DOWN' ||
-            newTelemetry.focusState == 'PHONE_DETECTED' ||
             newTelemetry.focusState == 'POSSIBLE_DROWSINESS',
-        distractionConfidence: newTelemetry.phoneDetected
-            ? newTelemetry.phoneConfidence
+        distractionConfidence: isPhone
+            ? (newTelemetry.phoneConfidence > 0 ? newTelemetry.phoneConfidence : 0.90)
             : (newTelemetry.isFaceDetected ? 0.85 : 0.0),
-        distractionType: newTelemetry.phoneDetected
+        distractionType: isPhone
             ? 'phone'
             : (newTelemetry.focusState == 'LOOKING_DOWN'
                 ? 'looking_down'
                 : (newTelemetry.focusState == 'LOOKING_AWAY'
                     ? 'looking_away'
                     : null)),
-        phoneDetected: newTelemetry.phoneDetected,
+        phoneDetected: isPhone,
         phoneConfidence: newTelemetry.phoneConfidence,
         phoneAvailable: newTelemetry.phoneAvailable,
         ear: newTelemetry.ear,
@@ -110,7 +111,7 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
         yawDeviation: newTelemetry.yawDeviation,
         pitchDeviation: newTelemetry.pitchDeviation,
         rollDeviation: newTelemetry.rollDeviation,
-        focusState: newTelemetry.focusState,
+        focusState: isPhone ? 'PHONE_DETECTED' : newTelemetry.focusState,
         cameraQuality: newTelemetry.cameraQuality,
         confidenceLevel: newTelemetry.confidenceLevel,
       );
@@ -509,11 +510,15 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
 
   String? _getActiveAlertMessage() {
     final state = _telemetry.focusState;
+    final isPhone = _telemetry.phoneDetected || state == 'PHONE_DETECTED';
+
+    if (isPhone) {
+      if (_dismissedAlertId == 'PHONE_DETECTED') return null;
+      return 'Put the phone aside and get back to your session.';
+    }
     if (_dismissedAlertId == state) return null;
 
-    if (state == 'PHONE_DETECTED') {
-      return 'Put the phone aside and get back to your session.';
-    } else if (state == 'POSSIBLE_DROWSINESS') {
+    if (state == 'POSSIBLE_DROWSINESS') {
       return 'Take a short break if you need one.';
     } else if (state == 'LOOKING_AWAY') {
       return 'Eyes on the screen.';
@@ -528,12 +533,17 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
   Widget _buildStatusChip() {
     final isFace = _telemetry.isFaceDetected;
     final state = _telemetry.focusState;
+    final isPhone = _telemetry.phoneDetected || state == 'PHONE_DETECTED';
 
     Color bg;
     Color border;
     String label;
 
-    if (state == 'FOCUSED') {
+    if (isPhone) {
+      bg = Colors.red.shade700;
+      border = Colors.red.shade800;
+      label = 'PHONE DETECTED';
+    } else if (state == 'FOCUSED') {
       bg = const Color(0xFF2EA043);
       border = const Color(0xFF238636);
       label = 'FOCUSED • ${_telemetry.fps} FPS';
@@ -545,10 +555,6 @@ class _CameraPreviewViewState extends State<CameraPreviewView>
       bg = Colors.amber.shade800;
       border = Colors.amber.shade900;
       label = 'POSSIBLE DROWSINESS';
-    } else if (state == 'PHONE_DETECTED') {
-      bg = Colors.red.shade700;
-      border = Colors.red.shade800;
-      label = 'PHONE DETECTED';
     } else if (state == 'RECOVERING') {
       bg = Colors.blue.shade700;
       border = Colors.blue.shade800;
@@ -957,17 +963,22 @@ class _RealTimeFaceTrackingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final isDetected = telemetry.isFaceDetected;
-    final isDistracted = telemetry.statusMessage.contains('LOOKING') ||
+    final isPhone = telemetry.phoneDetected || telemetry.focusState == 'PHONE_DETECTED';
+    final isDetected = telemetry.isFaceDetected || isPhone;
+    final isDistracted = isPhone ||
+        telemetry.statusMessage.contains('LOOKING') ||
         telemetry.statusMessage.contains('DROWSINESS') ||
+        telemetry.statusMessage.contains('PHONE') ||
         telemetry.statusMessage.contains('AWAY');
 
-    final primaryColor = isDetected
-        ? (isDistracted
-            ? Colors.amberAccent.withValues(alpha: 0.90 + pulseValue * 0.10)
-            : const Color(0xFF2EA043)
-                .withValues(alpha: 0.85 + pulseValue * 0.15))
-        : Colors.orangeAccent.withValues(alpha: 0.85);
+    final primaryColor = isPhone
+        ? Colors.redAccent.withValues(alpha: 0.95 + pulseValue * 0.05)
+        : (isDetected
+            ? (isDistracted
+                ? Colors.amberAccent.withValues(alpha: 0.90 + pulseValue * 0.10)
+                : const Color(0xFF2EA043)
+                    .withValues(alpha: 0.85 + pulseValue * 0.15))
+            : Colors.orangeAccent.withValues(alpha: 0.85));
 
     final boxPaint = Paint()
       ..color = primaryColor
@@ -1054,18 +1065,22 @@ class _RealTimeFaceTrackingPainter extends CustomPainter {
 
     // Dynamic Tag
     final isOffline = telemetry.focusState == 'BACKEND_OFFLINE';
-    final tagText = isDetected
-        ? (isDistracted
-            ? telemetry.statusMessage
-            : 'FACE TRACKED (${(telemetry.confidence * 100).toStringAsFixed(0)}%)')
-        : (isOffline ? 'ON-DEVICE FOCUS ACTIVE' : 'AWAY FROM VIEW');
+    final tagText = isPhone
+        ? 'PHONE DETECTED (${(telemetry.phoneConfidence * 100).toStringAsFixed(0)}%)'
+        : (isDetected
+            ? (isDistracted
+                ? telemetry.statusMessage
+                : 'FACE TRACKED (${(telemetry.confidence * 100).toStringAsFixed(0)}%)')
+            : (isOffline ? 'ON-DEVICE FOCUS ACTIVE' : 'AWAY FROM VIEW'));
 
     final textSpan = TextSpan(
       text: tagText,
       style: TextStyle(
-        color: isDetected
-            ? (isDistracted ? Colors.amberAccent : const Color(0xFF7EE787))
-            : (isOffline ? const Color(0xFF7EE787) : Colors.orangeAccent),
+        color: isPhone
+            ? Colors.redAccent
+            : (isDetected
+                ? (isDistracted ? Colors.amberAccent : const Color(0xFF7EE787))
+                : (isOffline ? const Color(0xFF7EE787) : Colors.orangeAccent)),
         fontSize: isCompact ? 8.5 : 10.0,
         fontWeight: FontWeight.w800,
         letterSpacing: 0.6,

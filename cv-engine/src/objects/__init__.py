@@ -20,8 +20,9 @@ class PhoneDetector:
     """Detects cell phones locally on CPU/Metal using YOLOv8n without external APIs."""
 
     CELL_PHONE_CLASS_ID = 67  # COCO dataset class index for cell phone
+    HANDHELD_DEVICE_CLASSES = [67, 65]  # cell phone (67) and remote / handheld device (65)
 
-    def __init__(self, model_path: str = "yolov8n.pt", min_confidence: float = 0.40) -> None:
+    def __init__(self, model_path: str = "yolov8n.pt", min_confidence: float = 0.25) -> None:
         self.min_confidence = min_confidence
         self.model = None
         self.available = False
@@ -63,10 +64,10 @@ class PhoneDetector:
 
         h, w = frame.shape[:2]
         try:
-            # Predict only for class 67 (cell phone)
+            # Predict for cell phone and handheld devices
             results = self.model.predict(
                 frame,
-                classes=[self.CELL_PHONE_CLASS_ID],
+                classes=self.HANDHELD_DEVICE_CLASSES,
                 conf=self.min_confidence,
                 verbose=False,
             )
