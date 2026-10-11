@@ -595,46 +595,99 @@ In 1885, Hermann Ebbinghaus proved that without active review, humans forget **o
 
   /// Universal academic explainer for any arbitrary user topic.
   static String generateDynamicConceptExplanation(String topicName, String originalQuery) {
-    // Sanitize topic name
     var cleanTopic = topicName.trim();
-    if (cleanTopic.isEmpty || cleanTopic.toLowerCase() == 'your current study material') {
-      cleanTopic = 'this topic';
+    if (cleanTopic.isEmpty || cleanTopic.toLowerCase() == 'your current study material' || cleanTopic.toLowerCase() == 'this topic') {
+      cleanTopic = 'Core Concept';
+    }
+
+    final queryLower = originalQuery.toLowerCase();
+    final isHowTo = queryLower.startsWith('how') || queryLower.contains('how to') || queryLower.contains('how do');
+    final isWhy = queryLower.startsWith('why') || queryLower.contains('why is') || queryLower.contains('why does');
+    final isComparison = queryLower.contains('vs') || queryLower.contains('difference between') || queryLower.contains('compare');
+
+    if (isComparison) {
+      return '''### ⚖️ Conceptual Comparison: **$cleanTopic**
+
+#### 1. Core Distinction & Overview
+When evaluating the components within **$cleanTopic**, the fundamental difference lies in their operational mechanism, resource requirements, and design trade-offs.
+
+#### 2. Comparative Matrix
+| Property / Dimension | Approach A (Primary Mode) | Approach B (Alternative Mode) |
+| :--- | :--- | :--- |
+| **Primary Mechanism** | Direct / Static Execution | Dynamic / Deferred Evaluation |
+| **Computational Overhead** | Predictable, O(1) to O(N) | Variable, dependent on input state |
+| **Optimal Use-Case** | Fixed constraints, high stability | Evolving requirements, flexibility |
+| **Common Bottleneck** | Memory footprint or rigidity | Latency or state synchronization |
+
+#### 3. Decision Framework
+- **Choose Approach A when:** Invariant bounds are known ahead of runtime and peak throughput is the primary objective.
+- **Choose Approach B when:** The operational domain requires adaptive runtime reconfiguration or abstraction across heterogeneous interfaces.
+
+---
+🎯 **Test your mastery:** Type **"Quiz me"** on the trade-offs of **$cleanTopic**!''';
+    }
+
+    if (isWhy) {
+      return '''### 🔍 Root-Cause Analysis: **$cleanTopic**
+
+#### 1. First-Principles Explanation
+The reason why **$cleanTopic** behaves this way stems directly from fundamental conservation laws and system constraints in this domain:
+- **Primary Driver:** Natural tendency toward equilibrium or lowest energy/cost state.
+- **Governing Law:** Outputs are strictly bounded by input parameters and entropy constraints.
+
+#### 2. The Chain of Causation
+1. **Initial Trigger / Stimulus:** An external force, input parameter, or state transition occurs.
+2. **Intermediate Mechanism:** The underlying system rules balance the differential via kinetic, algorithmic, or structural transformation.
+3. **Equilibrium State:** The system stabilizes once boundary conditions are satisfied.
+
+#### 3. High-Yield Exam Intuition
+Whenever you are asked *why* a phenomenon occurs in **$cleanTopic**, trace it backward from the observable output to the governing invariant rule rather than memorizing surface effects.
+
+---
+🎯 **Active Recall:** Ask me for a real-world scenario where this principle applies!''';
+    }
+
+    if (isHowTo) {
+      return '''### 🛠️ Step-by-Step Procedure: **$cleanTopic**
+
+#### 1. Systematic Workflow
+To solve, derive, or implement solutions involving **$cleanTopic**, follow this standard analytical sequence:
+
+1. **Step 1: Identify Invariants & Knowns**  
+   Catalog all given variables, boundary conditions, and target unknowns before computing.
+2. **Step 2: Formulate Governing Relationship**  
+   Select the canonical theorem, formula, or design pattern that directly relates your inputs to outcomes.
+3. **Step 3: Systematic Execution**  
+   Substitute values carefully, maintaining strict consistency across metric units or data types.
+4. **Step 4: Edge-Case Verification**  
+   Check asymptotic behavior at boundaries (x -> 0, x -> infinity, empty set, null conditions).
+
+#### 2. Practical Application Rule
+Never skip the dimensional or type analysis step: unit balance and invariant checks catch over 80% of exam mistakes in this area.
+
+---
+🎯 **Practice Problem:** Type **"Practice"** or **"Quiz me"** to work through a guided problem on **$cleanTopic**!''';
     }
 
     return '''### 📚 Concept Deep Dive: **$cleanTopic**
 
-#### 1. Core Intuition & Fundamental Principle
-At its heart, **$cleanTopic** addresses a fundamental question in its domain: how system components interact under structured constraints to produce deterministic, reliable outcomes.
+#### 1. Fundamental Definition & Core Mechanism
+At its foundation, **$cleanTopic** defines how specific elements interact under formal constraints to produce deterministic, predictable results.
 
-> 💡 **The Mental Model:** Think of **$cleanTopic** like the foundation and keystone of a suspension arch:
-> - Every foundational rule carries part of the operational load.
-> - When the invariants are preserved, the system remains stable under load.
-> - If an underlying boundary condition is violated, edge-case failure modes quickly propagate.
+- **Primary Role:** Serves as the operational mechanism connecting foundational inputs to high-level outcomes.
+- **Key Insight:** Rather than viewing it in isolation, recognize how **$cleanTopic** preserves system invariants during state changes.
 
----
+#### 2. Essential Analytical Framework
+When working through problems involving **$cleanTopic**:
+1. **The Known Invariants:** What physical, mathematical, or computational laws must remain constant?
+2. **The Active Variables:** Which parameters control the rate, magnitude, or complexity of change?
+3. **The Limiting Constraints:** Where does this model break down, and what assumptions are required?
 
-#### 2. Core Mechanics & Dynamics
-To understand **$cleanTopic** deeply, analyze it through three complementary lenses:
-1. **The Invariants (What never changes):** Identify the baseline laws, conservation principles, or formal definitions that govern the behavior of **$cleanTopic**.
-2. **The Variables (What controls the system):** Determine which parameters dictate state transitions, rates of change, and output magnitude.
-3. **The Boundary Constraints:** Establish the operational limits, edge conditions, and assumptions under which **$cleanTopic** remains valid.
-
----
-
-#### 3. Step-by-Step Analytical Breakdown
-When working through an exam or real-world problem involving **$cleanTopic**:
-- **Step 1: Isolate the Primary Factors:** Strip away confounding variables and state your given parameters and target unknowns.
-- **Step 2: Choose the Correct Governing Model:** Apply the canonical equations, theorems, or design patterns that link your inputs to outcomes.
-- **Step 3: Dimensional & Sanity Check:** Verify that units balance and that asymptotic behavior matches physical or logical intuition.
+#### 3. Common Pitfalls to Avoid ⚠️
+- **Ignoring Scale Factors:** Always check how the system scales linearly versus exponentially.
+- **Boundary Oversights:** Never assume behaviors at the extremes match midpoint behaviors.
 
 ---
-
-#### 4. High-Yield Exam Pitfalls & Cognitive Traps ⚠️
-- **Avoid Surface Memorization:** Memorizing definitions without understanding the underlying mechanism leads to errors when question parameters are inverted.
-- **Watch Scale & Unit Sensitivity:** Changes in scale or metric prefixes often introduce factor-of-10 or exponential errors.
-- **Check Edge Invariants:** Always verify behavior at zero, null, boundary limits, or extreme inputs.
-
----
-🎯 **Test your active recall:** Type **"Quiz me"** to test your grasp on **$cleanTopic**, or ask me to explain any specific mechanism in greater detail!''';
+🎯 **Deepen your recall:** Ask me *"How does $cleanTopic work in practice?"* or type **"Quiz me"**!''';
   }
 }

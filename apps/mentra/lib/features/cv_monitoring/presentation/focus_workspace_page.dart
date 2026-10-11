@@ -28,7 +28,7 @@ class FocusWorkspacePage extends StatefulWidget {
 }
 
 class _FocusWorkspacePageState extends State<FocusWorkspacePage> {
-  bool _previewCamera = false;
+  bool _previewCamera = true;
 
   @override
   Widget build(BuildContext context) {

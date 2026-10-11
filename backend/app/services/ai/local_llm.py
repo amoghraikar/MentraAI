@@ -166,6 +166,42 @@ class LocalLLM:
             logger.error("LocalLLM initialization error: %s", e)
             raise
         except Exception as e:
+            # On macOS, attempt to auto-launch Ollama.app if it was closed
+            import platform
+            import subprocess
+            if platform.system() == "Darwin":
+                try:
+                    logger.info("Attempting to auto-launch Ollama.app on macOS...")
+                    subprocess.Popen(["open", "-a", "Ollama"])
+                    for _ in range(8):
+                        await asyncio.sleep(0.5)
+                        try:
+                            async with httpx.AsyncClient(timeout=2.0) as retry_client:
+                                res = await retry_client.get(f"{self.base_url}/api/tags")
+                                if res.status_code == 200:
+                                    data = res.json()
+                                    models = [m.get("name", "") for m in data.get("models", [])]
+                                    candidates = [self.model, "qwen2.5:1.5b", "qwen2.5:0.5b"]
+                                    selected = None
+                                    for c in candidates:
+                                        for m in models:
+                                            if c in m or m in c:
+                                                selected = m
+                                                break
+                                        if selected:
+                                            break
+                                    if selected:
+                                        self.model = selected
+                                    elif models:
+                                        self.model = models[0]
+                                    self._state = ModelState.READY
+                                    logger.info("Ollama auto-launched successfully with model '%s'", self.model)
+                                    return
+                        except Exception:
+                            pass
+                except Exception as launch_err:
+                    logger.warning("Auto-launching Ollama.app failed: %s", launch_err)
+
             self._state = ModelState.ERROR
             self._last_error = str(e)
             logger.error("LocalLLM failed to connect to local runtime: %s", e)
